@@ -1,0 +1,87 @@
+/* RAA Brand Tokens — OptiStock Visual Suite (inlined) */
+@raa-primary:    #130064;
+@raa-accent:     #ffe600;
+@raa-black:      #000000;
+@raa-white:      #ffffff;
+@raa-warm-grey:  #e8e2d3;
+@raa-success:    #007064;
+@raa-success-bg: #e0f5ef;
+@raa-warning:    #d4920a;
+@raa-warning-bg: #fef3d6;
+@raa-danger:     #e60e22;
+@raa-danger-bg:  #fde8ea;
+@raa-info:       #73afd5;
+@raa-info-bg:    #e3f0fa;
+@raa-neutral:    #5e5d5a;
+@raa-neutral-bg: #f0eee6;
+@font-stack: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+
+.bullet-chart-container {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: @font-stack;
+    box-sizing: border-box;
+    padding: 4px;
+}
+
+.bullet-chart-svg-area {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.bullet-svg {
+    display: block;
+
+    .bullet-label {
+        font-family: @font-stack;
+        user-select: none;
+        cursor: default;
+    }
+
+    .bullet-value-label {
+        font-family: @font-stack;
+        user-select: none;
+        cursor: default;
+    }
+
+    .bullet-row,
+    .bullet-row-vert {
+        rect {
+            transition: opacity 0.15s ease;
+        }
+
+        &:hover rect {
+            opacity: 0.88;
+        }
+    }
+}
+
+.bullet-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: @raa-neutral;
+    text-align: center;
+    font-family: @font-stack;
+    padding: 16px;
+
+    .bullet-empty-icon {
+        font-size: 32px;
+        color: @raa-warm-grey;
+        margin-bottom: 8px;
+    }
+
+    .bullet-empty-text {
+        font-size: 13px;
+        line-height: 1.4;
+        max-width: 200px;
+
+        strong {
+            color: @raa-primary;
+        }
+    }
+}
