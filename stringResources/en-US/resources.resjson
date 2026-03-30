@@ -1,0 +1,8 @@
+{
+    "Visual_Short_Description": "Stephen Few bullet chart with actual vs target and qualitative colour bands.",
+    "Visual_Long_Description": "Horizontal and vertical bullet charts with configurable qualitative range bands, target markers, and value labels. Supports multiple rows with scrolling.",
+    "Role_Category": "Category",
+    "Role_Actual": "Actual",
+    "Role_Target": "Target",
+    "Role_Maximum": "Maximum"
+}

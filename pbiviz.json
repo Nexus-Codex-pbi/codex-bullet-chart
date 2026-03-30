@@ -1,0 +1,21 @@
+{
+  "visual": {
+    "name": "pbiBulletChart",
+    "displayName": "Bullet Chart",
+    "guid": "pbiBulletChartA1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6",
+    "visualClassName": "Visual",
+    "version": "1.0.0.0",
+    "description": "Stephen Few bullet chart with actual vs target and qualitative colour bands for OptiStock dashboard.",
+    "supportUrl": "https://nexusai.nexus",
+    "gitHubUrl": ""
+  },
+  "apiVersion": "5.9.1",
+  "author": { "name": "Neil Armstrong", "email": "harmsolo13@gmail.com" },
+  "assets": { "icon": "assets/icon.png" },
+  "externalJS": null,
+  "style": "style/visual.less",
+  "capabilities": "capabilities.json",
+  "dependencies": null,
+  "stringResources": ["en-US/resources.resjson"],
+  "version": "1.0.0.0"
+}

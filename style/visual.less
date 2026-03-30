@@ -1,0 +1,87 @@
+/* Codex Brand Tokens — OptiStock Visual Suite (inlined) */
+@codex-primary:    #130064;
+@codex-accent:     #ffe600;
+@codex-black:      #000000;
+@codex-white:      #ffffff;
+@codex-warm-grey:  #e8e2d3;
+@codex-success:    #007064;
+@codex-success-bg: #e0f5ef;
+@codex-warning:    #d4920a;
+@codex-warning-bg: #fef3d6;
+@codex-danger:     #e60e22;
+@codex-danger-bg:  #fde8ea;
+@codex-info:       #73afd5;
+@codex-info-bg:    #e3f0fa;
+@codex-neutral:    #5e5d5a;
+@codex-neutral-bg: #f0eee6;
+@font-stack: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+
+.bullet-chart-container {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: @font-stack;
+    box-sizing: border-box;
+    padding: 4px;
+}
+
+.bullet-chart-svg-area {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+.bullet-svg {
+    display: block;
+
+    .bullet-label {
+        font-family: @font-stack;
+        user-select: none;
+        cursor: default;
+    }
+
+    .bullet-value-label {
+        font-family: @font-stack;
+        user-select: none;
+        cursor: default;
+    }
+
+    .bullet-row,
+    .bullet-row-vert {
+        rect {
+            transition: opacity 0.15s ease;
+        }
+
+        &:hover rect {
+            opacity: 0.88;
+        }
+    }
+}
+
+.bullet-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: @codex-neutral;
+    text-align: center;
+    font-family: @font-stack;
+    padding: 16px;
+
+    .bullet-empty-icon {
+        font-size: 32px;
+        color: @codex-warm-grey;
+        margin-bottom: 8px;
+    }
+
+    .bullet-empty-text {
+        font-size: 13px;
+        line-height: 1.4;
+        max-width: 200px;
+
+        strong {
+            color: @codex-primary;
+        }
+    }
+}
