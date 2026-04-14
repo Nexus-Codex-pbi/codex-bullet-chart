@@ -4,5 +4,8 @@
     "Role_Category": "Category",
     "Role_Actual": "Actual",
     "Role_Target": "Target",
-    "Role_Maximum": "Maximum"
+    "Role_Maximum": "Maximum",
+    "Empty_DropMeasure": "Drop a measure into ",
+    "Empty_Actual": "Actual",
+    "Empty_ToRender": " to render bullets"
 }

@@ -1,10 +1,14 @@
 "use strict";
 
+import powerbi from "powerbi-visuals-api";
+
 import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
 
 import FormattingSettingsCard = formattingSettings.SimpleCard;
 import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
+
+const ConstantOrRule = powerbi.VisualEnumerationInstanceKinds.ConstantOrRule;
 
 class BulletCardSettings extends FormattingSettingsCard {
     orientation = new formattingSettings.ItemDropdown({
@@ -20,13 +24,15 @@ class BulletCardSettings extends FormattingSettingsCard {
     barColor = new formattingSettings.ColorPicker({
         name: "barColor",
         displayName: "Bar Color",
-        value: { value: "#130064" }
+        value: { value: "#130064" },
+        instanceKind: ConstantOrRule
     });
 
     targetColor = new formattingSettings.ColorPicker({
         name: "targetColor",
         displayName: "Target Color",
-        value: { value: "#e60e22" }
+        value: { value: "#e60e22" },
+        instanceKind: ConstantOrRule
     });
 
     targetWidth = new formattingSettings.NumUpDown({
@@ -72,7 +78,8 @@ class BulletCardSettings extends FormattingSettingsCard {
         name: "valueColor",
         displayName: "Value Color",
         description: "Color of the value text displayed on/beside bars",
-        value: { value: "#5e5d5a" }
+        value: { value: "#5e5d5a" },
+        instanceKind: ConstantOrRule
     });
 
     valueFontSize = new formattingSettings.NumUpDown({
@@ -123,19 +130,22 @@ class QualitativeRangesSettings extends FormattingSettingsCard {
     poorColor = new formattingSettings.ColorPicker({
         name: "poorColor",
         displayName: "Poor Color",
-        value: { value: "#fde8ea" }
+        value: { value: "#fde8ea" },
+        instanceKind: ConstantOrRule
     });
 
     acceptableColor = new formattingSettings.ColorPicker({
         name: "acceptableColor",
         displayName: "Acceptable Color",
-        value: { value: "#fef3d6" }
+        value: { value: "#fef3d6" },
+        instanceKind: ConstantOrRule
     });
 
     goodColor = new formattingSettings.ColorPicker({
         name: "goodColor",
         displayName: "Good Color",
-        value: { value: "#e0f5ef" }
+        value: { value: "#e0f5ef" },
+        instanceKind: ConstantOrRule
     });
 
     name: string = "qualitativeRanges";
@@ -147,6 +157,30 @@ class QualitativeRangesSettings extends FormattingSettingsCard {
         this.poorColor,
         this.acceptableColor,
         this.goodColor
+    ];
+}
+
+class BackgroundBarSettings extends FormattingSettingsCard {
+    transparent = new formattingSettings.ToggleSwitch({
+        name: "transparent",
+        displayName: "Transparent",
+        description: "Hide the background bar entirely (matches report background)",
+        value: false
+    });
+
+    color = new formattingSettings.ColorPicker({
+        name: "color",
+        displayName: "Color",
+        description: "Background bar color when qualitative ranges are disabled",
+        value: { value: "#f0eee6" },
+        instanceKind: ConstantOrRule
+    });
+
+    name: string = "backgroundBar";
+    displayName: string = "Background Bar";
+    slices: Array<FormattingSettingsSlice> = [
+        this.transparent,
+        this.color
     ];
 }
 
@@ -166,7 +200,8 @@ class LabelCardSettings extends FormattingSettingsCard {
     color = new formattingSettings.ColorPicker({
         name: "color",
         displayName: "Label Color",
-        value: { value: "#333333" }
+        value: { value: "#333333" },
+        instanceKind: ConstantOrRule
     });
 
     name: string = "labelSettings";
@@ -178,10 +213,115 @@ class LabelCardSettings extends FormattingSettingsCard {
     ];
 }
 
+class AxisCardSettings extends FormattingSettingsCard {
+    show = new formattingSettings.ToggleSwitch({
+        name: "show",
+        displayName: "Show Axis",
+        description: "Display axis tick values along the scale",
+        value: false
+    });
+
+    tickCount = new formattingSettings.NumUpDown({
+        name: "tickCount",
+        displayName: "Tick Count",
+        description: "Number of axis ticks (2–10)",
+        value: 5
+    });
+
+    fontSize = new formattingSettings.NumUpDown({
+        name: "fontSize",
+        displayName: "Font Size",
+        value: 10
+    });
+
+    color = new formattingSettings.ColorPicker({
+        name: "color",
+        displayName: "Axis Color",
+        value: { value: "#888888" },
+        instanceKind: ConstantOrRule
+    });
+
+    axisLabel = new formattingSettings.TextInput({
+        name: "axisLabel",
+        displayName: "Axis Label",
+        description: "Optional title displayed alongside the axis (e.g. Revenue, Units)",
+        placeholder: "",
+        value: ""
+    });
+
+    labelFontSize = new formattingSettings.NumUpDown({
+        name: "labelFontSize",
+        displayName: "Label Font Size",
+        description: "Font size for the axis title label",
+        value: 11
+    });
+
+    gridlines = new formattingSettings.ToggleSwitch({
+        name: "gridlines",
+        displayName: "Gridlines",
+        description: "Show gridlines at each tick mark",
+        value: false
+    });
+
+    gridlineColor = new formattingSettings.ColorPicker({
+        name: "gridlineColor",
+        displayName: "Gridline Color",
+        value: { value: "#e0e0e0" },
+        instanceKind: ConstantOrRule
+    });
+
+    gridlineWidth = new formattingSettings.NumUpDown({
+        name: "gridlineWidth",
+        displayName: "Gridline Width",
+        description: "Thickness of gridlines in pixels",
+        value: 1
+    });
+
+    showAxisTitles = new formattingSettings.ToggleSwitch({
+        name: "showAxisTitles",
+        displayName: "Show Axis Titles",
+        description: "Display titles below X axis and beside Y axis",
+        value: false
+    });
+
+    xAxisTitle = new formattingSettings.TextInput({
+        name: "xAxisTitle",
+        displayName: "X Axis Title",
+        placeholder: "X axis title",
+        value: ""
+    });
+
+    yAxisTitle = new formattingSettings.TextInput({
+        name: "yAxisTitle",
+        displayName: "Y Axis Title",
+        placeholder: "Y axis title",
+        value: ""
+    });
+
+    name: string = "axisSettings";
+    displayName: string = "Axis";
+    slices: Array<FormattingSettingsSlice> = [
+        this.show,
+        this.tickCount,
+        this.fontSize,
+        this.color,
+        this.axisLabel,
+        this.labelFontSize,
+        this.gridlines,
+        this.gridlineColor,
+        this.gridlineWidth,
+        this.showAxisTitles,
+        this.xAxisTitle,
+        this.yAxisTitle
+    ];
+}
+
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     bulletSettings = new BulletCardSettings();
     qualitativeRanges = new QualitativeRangesSettings();
+    backgroundBar = new BackgroundBarSettings();
     labelSettings = new LabelCardSettings();
+    axisSettings = new AxisCardSettings();
 
-    cards = [this.bulletSettings, this.qualitativeRanges, this.labelSettings];
+    cards = [this.bulletSettings, this.qualitativeRanges, this.backgroundBar, this.labelSettings, this.axisSettings];
 }

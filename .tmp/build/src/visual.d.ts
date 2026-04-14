@@ -12,9 +12,11 @@ export declare class Visual implements IVisual {
     private selectionManager;
     private tooltipService;
     private colorPalette;
+    private localizationManager;
     private isHighContrast;
     private container;
     private svgContainer;
+    private rowSelectionIds;
     constructor(options: VisualConstructorOptions);
     update(options: VisualUpdateOptions): void;
     private renderHorizontal;
