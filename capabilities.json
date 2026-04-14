@@ -26,6 +26,13 @@
             "kind": "Measure",
             "requiredTypes": [{ "numeric": true }],
             "description": "Full scale maximum (optional, auto-calculated if omitted)"
+        },
+        {
+            "displayName": "Sort Order",
+            "name": "sortOrder",
+            "kind": "Measure",
+            "requiredTypes": [{ "numeric": true }],
+            "description": "Custom sort order (ascending). If omitted, rows keep their original order."
         }
     ],
     "objects": {
@@ -96,6 +103,16 @@
                 }
             }
         },
+        "backgroundBar": {
+            "properties": {
+                "transparent": {
+                    "type": { "bool": true }
+                },
+                "color": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                }
+            }
+        },
         "labelSettings": {
             "properties": {
                 "show": {
@@ -106,6 +123,46 @@
                 },
                 "color": {
                     "type": { "fill": { "solid": { "color": true } } }
+                }
+            }
+        },
+        "axisSettings": {
+            "properties": {
+                "show": {
+                    "type": { "bool": true }
+                },
+                "tickCount": {
+                    "type": { "numeric": true }
+                },
+                "fontSize": {
+                    "type": { "numeric": true }
+                },
+                "color": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "axisLabel": {
+                    "type": { "text": true }
+                },
+                "labelFontSize": {
+                    "type": { "numeric": true }
+                },
+                "gridlines": {
+                    "type": { "bool": true }
+                },
+                "gridlineColor": {
+                    "type": { "fill": { "solid": { "color": true } } }
+                },
+                "gridlineWidth": {
+                    "type": { "numeric": true }
+                },
+                "showAxisTitles": {
+                    "type": { "bool": true }
+                },
+                "xAxisTitle": {
+                    "type": { "text": true }
+                },
+                "yAxisTitle": {
+                    "type": { "text": true }
                 }
             }
         }
@@ -123,7 +180,8 @@
                     "select": [
                         { "bind": { "to": "actual" } },
                         { "bind": { "to": "target" } },
-                        { "bind": { "to": "maximum" } }
+                        { "bind": { "to": "maximum" } },
+                        { "bind": { "to": "sortOrder" } }
                     ]
                 }
             }
@@ -138,8 +196,7 @@
         "supportedTypes": {
             "default": true,
             "canvas": true
-        },
-        "roles": ["tooltips"]
+        }
     },
     "privileges": []
 }

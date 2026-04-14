@@ -7,7 +7,9 @@ import IVisual = powerbi.extensibility.visual.IVisual;
 import IVisualEventService = powerbi.extensibility.IVisualEventService;
 import IVisualHost = powerbi.extensibility.visual.IVisualHost;
 import ISelectionManager = powerbi.extensibility.ISelectionManager;
+import ISelectionId = powerbi.visuals.ISelectionId;
 import ITooltipService = powerbi.extensibility.ITooltipService;
+import VisualTooltipDataItem = powerbi.extensibility.VisualTooltipDataItem;
 import ISandboxExtendedColorPalette = powerbi.extensibility.ISandboxExtendedColorPalette;
 import ILocalizationManager = powerbi.extensibility.ILocalizationManager;
 import DataView = powerbi.DataView;
@@ -26,6 +28,8 @@ interface BulletRow {
     actual: number;
     target: number | null;
     maximum: number;
+    sortOrder: number | null;
+    originalIndex: number;
 }
 
 export class Visual implements IVisual {
@@ -42,6 +46,9 @@ export class Visual implements IVisual {
     private isHighContrast: boolean;
     private container: HTMLElement;
     private svgContainer: HTMLElement;
+
+    // State for tooltips and cross-filtering
+    private rowSelectionIds: ISelectionId[] = [];
 
     constructor(options: VisualConstructorOptions) {
         this.formattingSettingsService = new FormattingSettingsService();
@@ -72,6 +79,9 @@ export class Visual implements IVisual {
 
         this.container.appendChild(this.svgContainer);
         this.target.appendChild(this.container);
+
+        // Allow deselection
+        this.selectionManager.registerOnSelectCallback(() => {});
     }
 
     public update(options: VisualUpdateOptions): void {
@@ -88,7 +98,9 @@ export class Visual implements IVisual {
 
             const bullet = this.formattingSettings.bulletSettings;
             const ranges = this.formattingSettings.qualitativeRanges;
+            const bgBar = this.formattingSettings.backgroundBar;
             const labels = this.formattingSettings.labelSettings;
+            const axis = this.formattingSettings.axisSettings;
 
             // Clear previous render
             while (this.svgContainer.firstChild) {
@@ -109,12 +121,14 @@ export class Visual implements IVisual {
             let actualCol: powerbi.DataViewValueColumn | null = null;
             let targetCol: powerbi.DataViewValueColumn | null = null;
             let maximumCol: powerbi.DataViewValueColumn | null = null;
+            let sortOrderCol: powerbi.DataViewValueColumn | null = null;
 
             for (let i = 0; i < values.length; i++) {
                 const roles = values[i].source.roles;
                 if (roles["actual"]) actualCol = values[i];
                 if (roles["target"]) targetCol = values[i];
                 if (roles["maximum"]) maximumCol = values[i];
+                if (roles["sortOrder"]) sortOrderCol = values[i];
             }
 
             if (!actualCol) {
@@ -133,6 +147,7 @@ export class Visual implements IVisual {
 
                 const targetVal = targetCol ? targetCol.values[i] as number : null;
                 const maxVal = maximumCol ? maximumCol.values[i] as number : null;
+                const sortOrderVal = sortOrderCol ? sortOrderCol.values[i] as number : null;
                 const categoryLabel = categories ? String(categories.values[i]) : `Row ${i + 1}`;
 
                 // Auto-calculate maximum if not provided
@@ -147,22 +162,49 @@ export class Visual implements IVisual {
                     category: categoryLabel,
                     actual: actualVal,
                     target: targetVal != null && !isNaN(targetVal) ? targetVal : null,
-                    maximum: computedMax
+                    maximum: computedMax,
+                    sortOrder: sortOrderVal != null && !isNaN(sortOrderVal) ? sortOrderVal : null,
+                    originalIndex: i
+                });
+            }
+
+            // Sort by sortOrder ascending if any row has a sort order value
+            const hasSortOrder = rows.some(r => r.sortOrder !== null);
+            if (hasSortOrder) {
+                rows.sort((a, b) => {
+                    // Rows without sort order go to the end
+                    if (a.sortOrder === null && b.sortOrder === null) return 0;
+                    if (a.sortOrder === null) return 1;
+                    if (b.sortOrder === null) return 1;
+                    return a.sortOrder - b.sortOrder;
                 });
             }
 
             if (rows.length === 0) {
                 this.renderEmpty();
+                this.rowSelectionIds = [];
                 this.eventService.renderingFinished(options);
                 return;
+            }
+
+            // Build selection IDs per row (after sort, using originalIndex)
+            this.rowSelectionIds = [];
+            if (categories) {
+                for (let i = 0; i < rows.length; i++) {
+                    this.rowSelectionIds.push(
+                        this.host.createSelectionIdBuilder()
+                            .withCategory(categories, rows[i].originalIndex)
+                            .createSelectionId()
+                    );
+                }
             }
 
             // Render based on orientation
             const orientation = bullet.orientation.value.value as string;
             if (orientation === "vertical") {
-                this.renderVertical(rows, options, bullet, ranges, labels);
+                this.renderVertical(rows, options, bullet, ranges, bgBar, labels, axis);
             } else {
-                this.renderHorizontal(rows, options, bullet, ranges, labels);
+                this.renderHorizontal(rows, options, bullet, ranges, bgBar, labels, axis);
             }
 
             this.eventService.renderingFinished(options);
@@ -176,7 +218,9 @@ export class Visual implements IVisual {
         options: VisualUpdateOptions,
         bullet: VisualFormattingSettingsModel["bulletSettings"],
         ranges: VisualFormattingSettingsModel["qualitativeRanges"],
-        labels: VisualFormattingSettingsModel["labelSettings"]
+        bgBar: VisualFormattingSettingsModel["backgroundBar"],
+        labels: VisualFormattingSettingsModel["labelSettings"],
+        axis: VisualFormattingSettingsModel["axisSettings"]
     ): void {
         const viewportWidth = options.viewport.width;
         const viewportHeight = options.viewport.height;
@@ -190,6 +234,16 @@ export class Visual implements IVisual {
             ? clamp(bullet.valueFontSize.value, 6, 30)
             : labelFontSize - 1;
 
+        const showAxis = axis.show.value;
+        const axisFontSize = clamp(axis.fontSize.value, 6, 18);
+        const axisColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.color.value.value;
+        const axisLabelText = axis.axisLabel.value || "";
+        const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
+        const showGridlines = axis.gridlines.value;
+        const gridlineColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.gridlineColor.value.value;
+        const gridlineWidth = clamp(axis.gridlineWidth.value, 1, 4);
+        const axisAreaHeight = showAxis ? axisFontSize + 12 + (axisLabelText ? axisLabelFontSize + 4 : 0) : 0;
+
         // Calculate label width — use 0.65em average char width + generous padding
         const labelWidth = showLabels
             ? Math.min(
@@ -200,7 +254,7 @@ export class Visual implements IVisual {
 
         const valueWidth = showValue ? 70 : 0;
         const chartWidth = Math.max(viewportWidth - labelWidth - valueWidth - 8, 40);
-        const totalHeight = rows.length * rowHeight;
+        const totalHeight = rows.length * rowHeight + axisAreaHeight;
 
         // Centre the visual horizontally
         const usedWidth = labelWidth + chartWidth + valueWidth + 8;
@@ -240,13 +294,16 @@ export class Visual implements IVisual {
                 const poorPct = clamp(ranges.poorThreshold.value, 0, 100) / 100;
                 const acceptPct = clamp(ranges.acceptableThreshold.value, 0, 100) / 100;
 
+                const hcRangeFill = this.isHighContrast ? this.colorPalette.foreground.value : null;
+
                 // Poor band (0 to poorThreshold)
                 g.append("rect")
                     .attr("x", 0)
                     .attr("y", rangeTop)
                     .attr("width", xScale(row.maximum * poorPct))
                     .attr("height", rangeHeight)
-                    .attr("fill", ranges.poorColor.value.value)
+                    .attr("fill", hcRangeFill || ranges.poorColor.value.value)
+                    .attr("opacity", this.isHighContrast ? 0.2 : 1)
                     .attr("rx", 2);
 
                 // Acceptable band (poorThreshold to acceptableThreshold)
@@ -255,7 +312,8 @@ export class Visual implements IVisual {
                     .attr("y", rangeTop)
                     .attr("width", xScale(row.maximum * acceptPct) - xScale(row.maximum * poorPct))
                     .attr("height", rangeHeight)
-                    .attr("fill", ranges.acceptableColor.value.value);
+                    .attr("fill", hcRangeFill || ranges.acceptableColor.value.value)
+                    .attr("opacity", this.isHighContrast ? 0.4 : 1);
 
                 // Good band (acceptableThreshold to max)
                 g.append("rect")
@@ -263,16 +321,17 @@ export class Visual implements IVisual {
                     .attr("y", rangeTop)
                     .attr("width", chartWidth - xScale(row.maximum * acceptPct))
                     .attr("height", rangeHeight)
-                    .attr("fill", ranges.goodColor.value.value)
+                    .attr("fill", hcRangeFill || ranges.goodColor.value.value)
+                    .attr("opacity", this.isHighContrast ? 0.6 : 1)
                     .attr("rx", 2);
-            } else {
-                // Neutral background when ranges disabled
+            } else if (!bgBar.transparent.value) {
+                // Configurable background when ranges disabled
                 g.append("rect")
                     .attr("x", 0)
                     .attr("y", rangeTop)
                     .attr("width", chartWidth)
                     .attr("height", rangeHeight)
-                    .attr("fill", CODEX_TOKENS.neutralBg)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.background.value : bgBar.color.value.value)
                     .attr("rx", 2);
             }
 
@@ -283,7 +342,7 @@ export class Visual implements IVisual {
                 .attr("y", yTop)
                 .attr("width", Math.max(barWidth, 1))
                 .attr("height", barHeight)
-                .attr("fill", bullet.barColor.value.value)
+                .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : bullet.barColor.value.value)
                 .attr("rx", barHeight / 4);
 
             // Target marker line
@@ -297,7 +356,9 @@ export class Visual implements IVisual {
                     .attr("y", markerTop)
                     .attr("width", bullet.targetWidth.value)
                     .attr("height", markerHeight)
-                    .attr("fill", bullet.targetColor.value.value)
+                    .attr("fill", this.isHighContrast
+                        ? (this.colorPalette.foregroundSelected?.value || this.colorPalette.foreground.value)
+                        : bullet.targetColor.value.value)
                     .attr("rx", 1);
             }
 
@@ -311,7 +372,7 @@ export class Visual implements IVisual {
                     .attr("class", "bullet-label")
                     .attr("font-size", labelFontSize + "px")
                     .attr("font-weight", "600")
-                    .attr("fill", labels.color.value.value)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : labels.color.value.value)
                     .text(row.category);
             }
 
@@ -325,10 +386,153 @@ export class Visual implements IVisual {
                     .attr("text-anchor", "start")
                     .attr("class", "bullet-value-label")
                     .attr("font-size", valueFontSize + "px")
-                    .attr("fill", valueColor)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : valueColor)
                     .text(formatted);
             }
+
+            // Invisible hit rect for tooltip and cross-filtering
+            const hitRect = g.append("rect")
+                .attr("x", 0)
+                .attr("y", yCenter - rowHeight / 2)
+                .attr("width", chartWidth)
+                .attr("height", rowHeight)
+                .attr("fill", "none")
+                .style("pointer-events", "all")
+                .style("cursor", "pointer");
+
+            const tooltipItems: VisualTooltipDataItem[] = [
+                { displayName: "Category", value: row.category },
+                { displayName: "Actual", value: this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string) }
+            ];
+            if (row.target !== null) {
+                tooltipItems.push({ displayName: "Target", value: this.formatDisplayValue(row.target, bullet.valueFormat.value.value as string) });
+                const variance = row.actual - row.target;
+                tooltipItems.push({ displayName: "Variance", value: this.formatDisplayValue(variance, bullet.valueFormat.value.value as string) });
+            }
+
+            const hitNode = hitRect.node() as SVGRectElement;
+            const selId = this.rowSelectionIds[idx];
+            hitNode.addEventListener("mousemove", (e: MouseEvent) => {
+                this.tooltipService.show({
+                    coordinates: [e.clientX, e.clientY],
+                    isTouchEvent: false,
+                    dataItems: tooltipItems,
+                    identities: selId ? [selId] : []
+                });
+            });
+            hitNode.addEventListener("mouseleave", () => {
+                this.tooltipService.hide({ isTouchEvent: false, immediately: false });
+            });
+            hitNode.addEventListener("click", (e: MouseEvent) => {
+                if (selId) {
+                    this.selectionManager.select(selId, e.ctrlKey || e.metaKey);
+                }
+                e.stopPropagation();
+            });
         });
+
+        // Axis ticks below the chart + gridlines
+        if (showAxis && rows.length > 0) {
+            const tickCount = clamp(axis.tickCount.value, 2, 10);
+            const globalMax = Math.max(...rows.map(r => r.maximum));
+            const axisScale = scaleLinear().domain([0, globalMax]).range([0, chartWidth]);
+            const chartBottom = rows.length * rowHeight;
+            const axisY = chartBottom + 4;
+            const axisG = svg.append("g")
+                .attr("class", "bullet-axis")
+                .attr("transform", `translate(${xOffset + labelWidth}, 0)`);
+
+            // Axis line
+            axisG.append("line")
+                .attr("x1", 0).attr("y1", axisY)
+                .attr("x2", chartWidth).attr("y2", axisY)
+                .attr("stroke", axisColor).attr("stroke-width", 1);
+
+            for (let i = 0; i <= tickCount; i++) {
+                const val = (globalMax / tickCount) * i;
+                const x = axisScale(val);
+
+                // Gridline (skip first — that's the left edge)
+                if (showGridlines && i > 0) {
+                    axisG.append("line")
+                        .attr("x1", x).attr("y1", 0)
+                        .attr("x2", x).attr("y2", chartBottom)
+                        .attr("stroke", gridlineColor)
+                        .attr("stroke-width", gridlineWidth)
+                        .attr("stroke-dasharray", "3,3")
+                        .attr("opacity", 0.6);
+                }
+
+                // Tick mark
+                axisG.append("line")
+                    .attr("x1", x).attr("y1", axisY)
+                    .attr("x2", x).attr("y2", axisY + 4)
+                    .attr("stroke", axisColor).attr("stroke-width", 1);
+
+                // Tick label
+                const formatted = this.formatDisplayValue(val, bullet.valueFormat.value.value as string);
+                axisG.append("text")
+                    .attr("x", x)
+                    .attr("y", axisY + 6)
+                    .attr("dy", "0.7em")
+                    .attr("text-anchor", "middle")
+                    .attr("class", "bullet-axis-label")
+                    .attr("font-size", axisFontSize + "px")
+                    .attr("fill", axisColor)
+                    .text(formatted);
+            }
+
+            // Axis title label
+            if (axisLabelText) {
+                axisG.append("text")
+                    .attr("x", chartWidth / 2)
+                    .attr("y", axisY + axisFontSize + 14)
+                    .attr("dy", "0.7em")
+                    .attr("text-anchor", "middle")
+                    .attr("class", "bullet-axis-title")
+                    .attr("font-size", axisLabelFontSize + "px")
+                    .attr("font-weight", "600")
+                    .attr("fill", axisColor)
+                    .text(axisLabelText);
+            }
+        }
+
+        // Axis titles (horizontal mode: X = value axis below, Y = category axis left)
+        const showAxisTitles = axis.showAxisTitles.value;
+        const xAxisTitleText = axis.xAxisTitle.value || "";
+        const yAxisTitleText = axis.yAxisTitle.value || "";
+        if (showAxisTitles) {
+            const axisTitleFontSize = axisFontSize + 2;
+            const titleColor = this.isHighContrast ? this.colorPalette.foreground.value : axisColor;
+            const svgEl = svg;
+            if (xAxisTitleText) {
+                const titleY = Math.min(totalHeight, viewportHeight) - 4;
+                svgEl.append("text")
+                    .attr("x", xOffset + labelWidth + chartWidth / 2)
+                    .attr("y", titleY)
+                    .attr("text-anchor", "middle")
+                    .attr("class", "axis-title x-axis-title")
+                    .attr("font-size", axisTitleFontSize + "px")
+                    .attr("font-weight", "600")
+                    .attr("fill", titleColor)
+                    .attr("font-family", "Segoe UI, Tahoma, Geneva, Verdana, sans-serif")
+                    .text(xAxisTitleText);
+            }
+            if (yAxisTitleText) {
+                const chartMidY = (rows.length * rowHeight) / 2;
+                svgEl.append("text")
+                    .attr("x", -chartMidY)
+                    .attr("y", xOffset + 12)
+                    .attr("text-anchor", "middle")
+                    .attr("transform", "rotate(-90)")
+                    .attr("class", "axis-title y-axis-title")
+                    .attr("font-size", axisTitleFontSize + "px")
+                    .attr("font-weight", "600")
+                    .attr("fill", titleColor)
+                    .attr("font-family", "Segoe UI, Tahoma, Geneva, Verdana, sans-serif")
+                    .text(yAxisTitleText);
+            }
+        }
     }
 
     private renderVertical(
@@ -336,7 +540,9 @@ export class Visual implements IVisual {
         options: VisualUpdateOptions,
         bullet: VisualFormattingSettingsModel["bulletSettings"],
         ranges: VisualFormattingSettingsModel["qualitativeRanges"],
-        labels: VisualFormattingSettingsModel["labelSettings"]
+        bgBar: VisualFormattingSettingsModel["backgroundBar"],
+        labels: VisualFormattingSettingsModel["labelSettings"],
+        axis: VisualFormattingSettingsModel["axisSettings"]
     ): void {
         const viewportWidth = options.viewport.width;
         const viewportHeight = options.viewport.height;
@@ -349,14 +555,24 @@ export class Visual implements IVisual {
             : labelFontSize - 1;
         const barWidth = clamp(bullet.barHeight.value, 6, 60);
 
+        const showAxis = axis.show.value;
+        const axisFontSize = clamp(axis.fontSize.value, 6, 18);
+        const axisColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.color.value.value;
+        const axisLabelText = axis.axisLabel.value || "";
+        const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
+        const showGridlines = axis.gridlines.value;
+        const gridlineColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.gridlineColor.value.value;
+        const gridlineWidth = clamp(axis.gridlineWidth.value, 1, 4);
+        const axisAreaWidth = showAxis ? axisFontSize * 4 + 8 + (axisLabelText ? axisLabelFontSize + 4 : 0) : 0;
+
         const labelAreaHeight = showLabels ? labelFontSize + 12 : 0;
         const valueAreaHeight = showValue ? valueFontSize + 8 : 0;
         const chartHeight = Math.max(viewportHeight - labelAreaHeight - valueAreaHeight - 8, 40);
         const colWidth = clamp(bullet.rowHeight.value, 20, 100);
-        const totalWidth = rows.length * colWidth;
+        const totalWidth = rows.length * colWidth + axisAreaWidth;
 
         // Centre horizontally when content is narrower than viewport
-        const xOffset = totalWidth < viewportWidth ? (viewportWidth - totalWidth) / 2 : 0;
+        const xOffset = totalWidth < viewportWidth ? (viewportWidth - totalWidth) / 2 + axisAreaWidth : axisAreaWidth;
 
         const svg = select(this.svgContainer)
             .append("svg")
@@ -390,13 +606,16 @@ export class Visual implements IVisual {
                 const poorPct = clamp(ranges.poorThreshold.value, 0, 100) / 100;
                 const acceptPct = clamp(ranges.acceptableThreshold.value, 0, 100) / 100;
 
+                const hcRangeFill = this.isHighContrast ? this.colorPalette.foreground.value : null;
+
                 // Poor band (bottom)
                 g.append("rect")
                     .attr("x", rangeLeft)
                     .attr("y", yScale(row.maximum * poorPct))
                     .attr("width", rangeWidth)
                     .attr("height", yScale(0) - yScale(row.maximum * poorPct))
-                    .attr("fill", ranges.poorColor.value.value)
+                    .attr("fill", hcRangeFill || ranges.poorColor.value.value)
+                    .attr("opacity", this.isHighContrast ? 0.2 : 1)
                     .attr("rx", 2);
 
                 // Acceptable band (middle)
@@ -405,7 +624,8 @@ export class Visual implements IVisual {
                     .attr("y", yScale(row.maximum * acceptPct))
                     .attr("width", rangeWidth)
                     .attr("height", yScale(row.maximum * poorPct) - yScale(row.maximum * acceptPct))
-                    .attr("fill", ranges.acceptableColor.value.value);
+                    .attr("fill", hcRangeFill || ranges.acceptableColor.value.value)
+                    .attr("opacity", this.isHighContrast ? 0.4 : 1);
 
                 // Good band (top)
                 g.append("rect")
@@ -413,15 +633,16 @@ export class Visual implements IVisual {
                     .attr("y", yScale(row.maximum))
                     .attr("width", rangeWidth)
                     .attr("height", yScale(row.maximum * acceptPct) - yScale(row.maximum))
-                    .attr("fill", ranges.goodColor.value.value)
+                    .attr("fill", hcRangeFill || ranges.goodColor.value.value)
+                    .attr("opacity", this.isHighContrast ? 0.6 : 1)
                     .attr("rx", 2);
-            } else {
+            } else if (!bgBar.transparent.value) {
                 g.append("rect")
                     .attr("x", rangeLeft)
                     .attr("y", yScale(row.maximum))
                     .attr("width", rangeWidth)
                     .attr("height", chartHeight)
-                    .attr("fill", CODEX_TOKENS.neutralBg)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.background.value : bgBar.color.value.value)
                     .attr("rx", 2);
             }
 
@@ -433,7 +654,7 @@ export class Visual implements IVisual {
                 .attr("y", barTopY)
                 .attr("width", barWidth)
                 .attr("height", Math.max(barHeightPx, 1))
-                .attr("fill", bullet.barColor.value.value)
+                .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : bullet.barColor.value.value)
                 .attr("rx", barWidth / 4);
 
             // Target marker line
@@ -447,7 +668,9 @@ export class Visual implements IVisual {
                     .attr("y", targetY - bullet.targetWidth.value / 2)
                     .attr("width", markerWidth)
                     .attr("height", bullet.targetWidth.value)
-                    .attr("fill", bullet.targetColor.value.value)
+                    .attr("fill", this.isHighContrast
+                        ? (this.colorPalette.foregroundSelected?.value || this.colorPalette.foreground.value)
+                        : bullet.targetColor.value.value)
                     .attr("rx", 1);
             }
 
@@ -460,7 +683,7 @@ export class Visual implements IVisual {
                     .attr("class", "bullet-label")
                     .attr("font-size", labelFontSize + "px")
                     .attr("font-weight", "600")
-                    .attr("fill", labels.color.value.value)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : labels.color.value.value)
                     .text(row.category);
             }
 
@@ -473,10 +696,153 @@ export class Visual implements IVisual {
                     .attr("text-anchor", "middle")
                     .attr("class", "bullet-value-label")
                     .attr("font-size", valueFontSize + "px")
-                    .attr("fill", valueColor)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : valueColor)
                     .text(formatted);
             }
+
+            // Invisible hit rect for tooltip and cross-filtering
+            const hitRectV = g.append("rect")
+                .attr("x", rangeLeft - 2)
+                .attr("y", yScale(row.maximum))
+                .attr("width", rangeWidth + 4)
+                .attr("height", chartHeight)
+                .attr("fill", "none")
+                .style("pointer-events", "all")
+                .style("cursor", "pointer");
+
+            const tooltipItemsV: VisualTooltipDataItem[] = [
+                { displayName: "Category", value: row.category },
+                { displayName: "Actual", value: this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string) }
+            ];
+            if (row.target !== null) {
+                tooltipItemsV.push({ displayName: "Target", value: this.formatDisplayValue(row.target, bullet.valueFormat.value.value as string) });
+                const varianceV = row.actual - row.target;
+                tooltipItemsV.push({ displayName: "Variance", value: this.formatDisplayValue(varianceV, bullet.valueFormat.value.value as string) });
+            }
+
+            const hitNodeV = hitRectV.node() as SVGRectElement;
+            const selIdV = this.rowSelectionIds[idx];
+            hitNodeV.addEventListener("mousemove", (e: MouseEvent) => {
+                this.tooltipService.show({
+                    coordinates: [e.clientX, e.clientY],
+                    isTouchEvent: false,
+                    dataItems: tooltipItemsV,
+                    identities: selIdV ? [selIdV] : []
+                });
+            });
+            hitNodeV.addEventListener("mouseleave", () => {
+                this.tooltipService.hide({ isTouchEvent: false, immediately: false });
+            });
+            hitNodeV.addEventListener("click", (e: MouseEvent) => {
+                if (selIdV) {
+                    this.selectionManager.select(selIdV, e.ctrlKey || e.metaKey);
+                }
+                e.stopPropagation();
+            });
         });
+
+        // Axis ticks on the left side + gridlines
+        if (showAxis && rows.length > 0) {
+            const tickCount = clamp(axis.tickCount.value, 2, 10);
+            const globalMax = Math.max(...rows.map(r => r.maximum));
+            const yScale = scaleLinear()
+                .domain([0, globalMax])
+                .range([chartHeight + valueAreaHeight, valueAreaHeight]);
+            const axisX = xOffset - 4;
+            const chartRight = xOffset + rows.length * colWidth;
+            const axisG = svg.append("g").attr("class", "bullet-axis");
+
+            // Axis line
+            axisG.append("line")
+                .attr("x1", axisX).attr("y1", yScale(0))
+                .attr("x2", axisX).attr("y2", yScale(globalMax))
+                .attr("stroke", axisColor).attr("stroke-width", 1);
+
+            for (let i = 0; i <= tickCount; i++) {
+                const val = (globalMax / tickCount) * i;
+                const y = yScale(val);
+
+                // Gridline (skip bottom — that's the baseline)
+                if (showGridlines && i > 0) {
+                    axisG.append("line")
+                        .attr("x1", axisX).attr("y1", y)
+                        .attr("x2", chartRight).attr("y2", y)
+                        .attr("stroke", gridlineColor)
+                        .attr("stroke-width", gridlineWidth)
+                        .attr("stroke-dasharray", "3,3")
+                        .attr("opacity", 0.6);
+                }
+
+                // Tick mark
+                axisG.append("line")
+                    .attr("x1", axisX - 4).attr("y1", y)
+                    .attr("x2", axisX).attr("y2", y)
+                    .attr("stroke", axisColor).attr("stroke-width", 1);
+
+                // Tick label
+                const formatted = this.formatDisplayValue(val, bullet.valueFormat.value.value as string);
+                axisG.append("text")
+                    .attr("x", axisX - 6)
+                    .attr("y", y)
+                    .attr("dy", "0.35em")
+                    .attr("text-anchor", "end")
+                    .attr("class", "bullet-axis-label")
+                    .attr("font-size", axisFontSize + "px")
+                    .attr("fill", axisColor)
+                    .text(formatted);
+            }
+
+            // Axis title label (rotated, left side)
+            if (axisLabelText) {
+                const midY = (yScale(0) + yScale(globalMax)) / 2;
+                axisG.append("text")
+                    .attr("x", -midY)
+                    .attr("y", axisX - axisFontSize * 4 - 10)
+                    .attr("text-anchor", "middle")
+                    .attr("transform", "rotate(-90)")
+                    .attr("class", "bullet-axis-title")
+                    .attr("font-size", axisLabelFontSize + "px")
+                    .attr("font-weight", "600")
+                    .attr("fill", axisColor)
+                    .text(axisLabelText);
+            }
+        }
+
+        // Axis titles (vertical mode: X = category axis bottom, Y = value axis left)
+        const showAxisTitles = axis.showAxisTitles.value;
+        const xAxisTitleText = axis.xAxisTitle.value || "";
+        const yAxisTitleText = axis.yAxisTitle.value || "";
+        if (showAxisTitles) {
+            const axisTitleFontSize = axisFontSize + 2;
+            const titleColor = this.isHighContrast ? this.colorPalette.foreground.value : axisColor;
+            const svgEl = svg;
+            if (xAxisTitleText) {
+                svgEl.append("text")
+                    .attr("x", xOffset + rows.length * colWidth / 2)
+                    .attr("y", viewportHeight - 4)
+                    .attr("text-anchor", "middle")
+                    .attr("class", "axis-title x-axis-title")
+                    .attr("font-size", axisTitleFontSize + "px")
+                    .attr("font-weight", "600")
+                    .attr("fill", titleColor)
+                    .attr("font-family", "Segoe UI, Tahoma, Geneva, Verdana, sans-serif")
+                    .text(xAxisTitleText);
+            }
+            if (yAxisTitleText) {
+                const midY = (valueAreaHeight + chartHeight + valueAreaHeight) / 2;
+                svgEl.append("text")
+                    .attr("x", -midY)
+                    .attr("y", 12)
+                    .attr("text-anchor", "middle")
+                    .attr("transform", "rotate(-90)")
+                    .attr("class", "axis-title y-axis-title")
+                    .attr("font-size", axisTitleFontSize + "px")
+                    .attr("font-weight", "600")
+                    .attr("fill", titleColor)
+                    .attr("font-family", "Segoe UI, Tahoma, Geneva, Verdana, sans-serif")
+                    .text(yAxisTitleText);
+            }
+        }
     }
 
     private renderEmpty(): void {
@@ -492,11 +858,11 @@ export class Visual implements IVisual {
 
         const text = document.createElement("div");
         text.className = "bullet-empty-text";
-        text.appendChild(document.createTextNode("Drop a measure into "));
+        text.appendChild(document.createTextNode(this.localizationManager.getDisplayName("Empty_DropMeasure")));
         const strong = document.createElement("strong");
-        strong.textContent = "Actual";
+        strong.textContent = this.localizationManager.getDisplayName("Empty_Actual");
         text.appendChild(strong);
-        text.appendChild(document.createTextNode(" to render bullets"));
+        text.appendChild(document.createTextNode(this.localizationManager.getDisplayName("Empty_ToRender")));
 
         empty.appendChild(icon);
         empty.appendChild(text);

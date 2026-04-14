@@ -28,6 +28,13 @@ declare class QualitativeRangesSettings extends FormattingSettingsCard {
     displayName: string;
     slices: Array<FormattingSettingsSlice>;
 }
+declare class BackgroundBarSettings extends FormattingSettingsCard {
+    transparent: formattingSettings.ToggleSwitch;
+    color: formattingSettings.ColorPicker;
+    name: string;
+    displayName: string;
+    slices: Array<FormattingSettingsSlice>;
+}
 declare class LabelCardSettings extends FormattingSettingsCard {
     show: formattingSettings.ToggleSwitch;
     fontSize: formattingSettings.NumUpDown;
@@ -36,10 +43,29 @@ declare class LabelCardSettings extends FormattingSettingsCard {
     displayName: string;
     slices: Array<FormattingSettingsSlice>;
 }
+declare class AxisCardSettings extends FormattingSettingsCard {
+    show: formattingSettings.ToggleSwitch;
+    tickCount: formattingSettings.NumUpDown;
+    fontSize: formattingSettings.NumUpDown;
+    color: formattingSettings.ColorPicker;
+    axisLabel: formattingSettings.TextInput;
+    labelFontSize: formattingSettings.NumUpDown;
+    gridlines: formattingSettings.ToggleSwitch;
+    gridlineColor: formattingSettings.ColorPicker;
+    gridlineWidth: formattingSettings.NumUpDown;
+    showAxisTitles: formattingSettings.ToggleSwitch;
+    xAxisTitle: formattingSettings.TextInput;
+    yAxisTitle: formattingSettings.TextInput;
+    name: string;
+    displayName: string;
+    slices: Array<FormattingSettingsSlice>;
+}
 export declare class VisualFormattingSettingsModel extends FormattingSettingsModel {
     bulletSettings: BulletCardSettings;
     qualitativeRanges: QualitativeRangesSettings;
+    backgroundBar: BackgroundBarSettings;
     labelSettings: LabelCardSettings;
-    cards: (BulletCardSettings | QualitativeRangesSettings | LabelCardSettings)[];
+    axisSettings: AxisCardSettings;
+    cards: (BulletCardSettings | QualitativeRangesSettings | BackgroundBarSettings | LabelCardSettings | AxisCardSettings)[];
 }
 export {};
