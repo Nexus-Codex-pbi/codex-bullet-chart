@@ -9,7 +9,7 @@ var codexBulletChartA1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6: IVisualPlugin = {
     name: 'codexBulletChartA1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6',
     displayName: 'Codex Bullet Chart',
     class: 'Visual',
-    apiVersion: '5.10.0',
+    apiVersion: '5.11.0',
     create: (options?: VisualConstructorOptions) => {
         if (Visual) {
             return new Visual(options);

@@ -1,7 +1,7 @@
 {
   "name": "visual",
   "description": "Stephen Few bullet chart with actual vs target and qualitative colour bands for Power BI",
-  "version": "1.0.0.0",
+  "version": "1.0.0.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/harmsolo/pbiBulletChart"
@@ -20,7 +20,7 @@
     "d3-format": "^3.1.2",
     "d3-scale": "^4.0.2",
     "d3-selection": "^3.0.0",
-    "powerbi-visuals-api": "^5.10.0",
+    "powerbi-visuals-api": "5.11.0",
     "powerbi-visuals-utils-formattingmodel": "^6.0.4"
   },
   "devDependencies": {
