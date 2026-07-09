@@ -245,6 +245,32 @@
           },
           "displayName": "Font Size"
         },
+        "fontFamily": {
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          },
+          "displayName": "Font Family"
+        },
+        "bold": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Bold"
+        },
+        "italic": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Italic"
+        },
+        "underline": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Underline"
+        },
         "color": {
           "type": {
             "fill": {
@@ -277,6 +303,32 @@
             "numeric": true
           },
           "displayName": "Font Size"
+        },
+        "fontFamily": {
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          },
+          "displayName": "Font Family"
+        },
+        "bold": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Bold"
+        },
+        "italic": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Italic"
+        },
+        "underline": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Underline"
         },
         "color": {
           "type": {
@@ -360,6 +412,75 @@
           "displayName": "Transparency",
           "type": {
             "numeric": true
+          }
+        }
+      }
+    },
+    "titleSettings": {
+      "displayName": "Visual Title",
+      "properties": {
+        "showTitle": {
+          "displayName": "Show Title",
+          "type": {
+            "bool": true
+          }
+        },
+        "titleText": {
+          "displayName": "Title Text",
+          "type": {
+            "text": true
+          }
+        },
+        "titleFontFamily": {
+          "displayName": "Font Family",
+          "type": {
+            "formatting": {
+              "fontFamily": true
+            }
+          }
+        },
+        "titleFontSize": {
+          "displayName": "Font Size",
+          "type": {
+            "formatting": {
+              "fontSize": true
+            }
+          }
+        },
+        "titleBold": {
+          "displayName": "Bold",
+          "type": {
+            "bool": true
+          }
+        },
+        "titleItalic": {
+          "displayName": "Italic",
+          "type": {
+            "bool": true
+          }
+        },
+        "titleUnderline": {
+          "displayName": "Underline",
+          "type": {
+            "bool": true
+          }
+        },
+        "titleAlign": {
+          "displayName": "Alignment",
+          "type": {
+            "formatting": {
+              "alignment": true
+            }
+          }
+        },
+        "titleColor": {
+          "displayName": "Font Color",
+          "type": {
+            "fill": {
+              "solid": {
+                "color": true
+              }
+            }
           }
         }
       }

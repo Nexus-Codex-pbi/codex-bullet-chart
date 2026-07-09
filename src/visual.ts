@@ -20,7 +20,7 @@ import { select } from "d3-selection";
 import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 
-import { VisualFormattingSettingsModel } from "./settings";
+import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { CODEX_TOKENS, formatValue, clamp } from "./utils";
 import { toRgba } from "../../_shared/formatting/colorHelpers";
 
@@ -58,6 +58,10 @@ export class Visual implements IVisual {
     // override reads) and the ColorHelper resolved once per update().
     private categoricalCategories: powerbi.DataViewCategoryColumn | undefined;
     private barColorHelper: ColorHelper | null = null;
+
+    // Conditional formatting (fx) state — Value Color / data-label colour
+    // (TEXT-02): resolved once per update(), same shape as barColorHelper.
+    private valueColorHelper: ColorHelper | null = null;
 
     constructor(options: VisualConstructorOptions) {
         this.formattingSettingsService = new FormattingSettingsService();
@@ -105,6 +109,7 @@ export class Visual implements IVisual {
             // High contrast mode detection
             this.isHighContrast = this.colorPalette.isHighContrast;
 
+            const titleFmt = this.formattingSettings.titleSettings;
             const bullet = this.formattingSettings.bulletSettings;
             const ranges = this.formattingSettings.qualitativeRanges;
             const bgBar = this.formattingSettings.backgroundBar;
@@ -248,12 +253,30 @@ export class Visual implements IVisual {
                 bullet.barColor.value.value
             );
 
+            // ─── Conditional formatting (fx) wiring — Value Color / the
+            // data-label colour shown at the end of each bar (TEXT-02). A
+            // bare `instanceKind: ConstantOrRule` declaration in settings.ts
+            // does not make the fx button functional on its own — mirrors
+            // the barColor wiring above exactly, distinct property, same
+            // per-row resolution pattern (categories.objects[originalIndex]).
+            bullet.valueColor.selector = dataViewWildcard.createDataViewWildcardSelector(
+                dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
+            );
+            bullet.valueColor.altConstantSelector = this.rowSelectionIds[0]
+                ? this.rowSelectionIds[0].getSelector()
+                : undefined;
+            this.valueColorHelper = new ColorHelper(
+                this.colorPalette,
+                { objectName: "bulletSettings", propertyName: "valueColor" },
+                bullet.valueColor.value.value
+            );
+
             // Render based on orientation
             const orientation = bullet.orientation.value.value as string;
             if (orientation === "vertical") {
-                this.renderVertical(rows, options, bullet, ranges, bgBar, labels, axis);
+                this.renderVertical(rows, options, bullet, ranges, bgBar, labels, axis, titleFmt);
             } else {
-                this.renderHorizontal(rows, options, bullet, ranges, bgBar, labels, axis);
+                this.renderHorizontal(rows, options, bullet, ranges, bgBar, labels, axis, titleFmt);
             }
 
             this.eventService.renderingFinished(options);
@@ -269,7 +292,8 @@ export class Visual implements IVisual {
         ranges: VisualFormattingSettingsModel["qualitativeRanges"],
         bgBar: VisualFormattingSettingsModel["backgroundBar"],
         labels: VisualFormattingSettingsModel["labelSettings"],
-        axis: VisualFormattingSettingsModel["axisSettings"]
+        axis: VisualFormattingSettingsModel["axisSettings"],
+        titleFmt: VisualFormattingSettingsModel["titleSettings"]
     ): void {
         const viewportWidth = options.viewport.width;
         const viewportHeight = options.viewport.height;
@@ -277,14 +301,30 @@ export class Visual implements IVisual {
         const barHeight = clamp(bullet.barHeight.value, 6, rowHeight - 4);
         const showLabels = labels.show.value;
         const labelFontSize = clamp(labels.fontSize.value, 8, 24);
+        const labelFontFamily = labels.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
+        const labelWeight = this.weightFor(labels.bold.value, "600");
+        const labelStyle = labels.italic.value ? "italic" : "normal";
+        const labelDecoration = labels.underline.value ? "underline" : "none";
         const showValue = bullet.showValue.value;
-        const valueColor = bullet.valueColor.value.value;
         const valueFontSize = bullet.valueFontSize.value > 0
             ? clamp(bullet.valueFontSize.value, 6, 30)
             : labelFontSize - 1;
 
         const showAxis = axis.show.value;
         const axisFontSize = clamp(axis.fontSize.value, 6, 18);
+        const axisFontFamily = axis.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
+        const axisWeight = this.weightFor(axis.bold.value, "400");
+        const axisStyle = axis.italic.value ? "italic" : "normal";
+        const axisDecoration = axis.underline.value ? "underline" : "none";
+
+        // ─── Title (iframe-internal, Policy 1180.2.5) — reserves vertical
+        // space above the chart, threaded as an explicit titleH parameter
+        // (matches pbiVarianceWaterfall/pbiTimeBreakdown precedent). This
+        // visual rebuilds its SVG from scratch every render (no persistent
+        // title element), so the title text is appended fresh below.
+        const showTitle = !!titleFmt.showTitle.value && !!titleFmt.titleText.value;
+        const titleFontSize = titleFmt.titleFontSize.value || 14;
+        const titleH = showTitle ? titleFontSize + 12 : 0;
         const axisColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.color.value.value;
         const axisLabelText = axis.axisLabel.value || "";
         const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
@@ -303,7 +343,7 @@ export class Visual implements IVisual {
 
         const valueWidth = showValue ? 70 : 0;
         const chartWidth = Math.max(viewportWidth - labelWidth - valueWidth - 8, 40);
-        const totalHeight = rows.length * rowHeight + axisAreaHeight;
+        const totalHeight = rows.length * rowHeight + axisAreaHeight + titleH;
 
         // Centre the visual horizontally
         const usedWidth = labelWidth + chartWidth + valueWidth + 8;
@@ -315,6 +355,24 @@ export class Visual implements IVisual {
             .attr("height", Math.min(totalHeight, viewportHeight))
             .attr("class", "bullet-svg");
 
+        if (showTitle) {
+            const tAlign = textAlignFor(String(titleFmt.titleAlign?.value || "left"));
+            const tx = tAlign === "center" ? viewportWidth / 2 : tAlign === "right" ? viewportWidth - 8 : 8;
+            const tAnchor = tAlign === "center" ? "middle" : tAlign === "right" ? "end" : "start";
+            svg.append("text")
+                .attr("x", tx)
+                .attr("y", titleFontSize + 4)
+                .attr("text-anchor", tAnchor)
+                .attr("class", "bullet-title")
+                .style("font-family", titleFmt.titleFontFamily.value || "Segoe UI, sans-serif")
+                .style("font-size", `${titleFontSize}px`)
+                .style("font-weight", this.weightFor(titleFmt.titleBold.value, "400"))
+                .style("font-style", titleFmt.titleItalic.value ? "italic" : "normal")
+                .style("text-decoration", titleFmt.titleUnderline.value ? "underline" : "none")
+                .style("fill", this.isHighContrast ? this.colorPalette.foreground.value : titleFmt.titleColor.value.value)
+                .text(String(titleFmt.titleText.value));
+        }
+
         // Scrollable if needed
         if (totalHeight > viewportHeight) {
             this.svgContainer.style.overflowY = "auto";
@@ -324,7 +382,7 @@ export class Visual implements IVisual {
         }
 
         rows.forEach((row, idx) => {
-            const yCenter = idx * rowHeight + rowHeight / 2;
+            const yCenter = titleH + idx * rowHeight + rowHeight / 2;
             const yTop = yCenter - barHeight / 2;
             const rangeHeight = barHeight * 1.6;
             const rangeTop = yCenter - rangeHeight / 2;
@@ -425,13 +483,17 @@ export class Visual implements IVisual {
                     .attr("dy", "0.35em")
                     .attr("text-anchor", "end")
                     .attr("class", "bullet-label")
+                    .attr("font-family", labelFontFamily)
                     .attr("font-size", labelFontSize + "px")
-                    .attr("font-weight", "600")
+                    .attr("font-weight", labelWeight)
+                    .attr("font-style", labelStyle)
+                    .attr("text-decoration", labelDecoration)
                     .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : labels.color.value.value)
                     .text(row.category);
             }
 
-            // Value label at end of bar
+            // Value label at end of bar — Value Color fx (TEXT-02),
+            // resolved per-row via resolveValueColor (mirrors getBarColor).
             if (showValue) {
                 const formatted = this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string);
                 g.append("text")
@@ -441,7 +503,7 @@ export class Visual implements IVisual {
                     .attr("text-anchor", "start")
                     .attr("class", "bullet-value-label")
                     .attr("font-size", valueFontSize + "px")
-                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : valueColor)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : this.resolveValueColor(bullet, row.originalIndex))
                     .text(formatted);
             }
 
@@ -491,7 +553,7 @@ export class Visual implements IVisual {
             const tickCount = clamp(axis.tickCount.value, 2, 10);
             const globalMax = Math.max(...rows.map(r => r.maximum));
             const axisScale = scaleLinear().domain([0, globalMax]).range([0, chartWidth]);
-            const chartBottom = rows.length * rowHeight;
+            const chartBottom = titleH + rows.length * rowHeight;
             const axisY = chartBottom + 4;
             const axisG = svg.append("g")
                 .attr("class", "bullet-axis")
@@ -510,7 +572,7 @@ export class Visual implements IVisual {
                 // Gridline (skip first — that's the left edge)
                 if (showGridlines && i > 0) {
                     axisG.append("line")
-                        .attr("x1", x).attr("y1", 0)
+                        .attr("x1", x).attr("y1", titleH)
                         .attr("x2", x).attr("y2", chartBottom)
                         .attr("stroke", gridlineColor)
                         .attr("stroke-width", gridlineWidth)
@@ -532,7 +594,11 @@ export class Visual implements IVisual {
                     .attr("dy", "0.7em")
                     .attr("text-anchor", "middle")
                     .attr("class", "bullet-axis-label")
+                    .attr("font-family", axisFontFamily)
                     .attr("font-size", axisFontSize + "px")
+                    .attr("font-weight", axisWeight)
+                    .attr("font-style", axisStyle)
+                    .attr("text-decoration", axisDecoration)
                     .attr("fill", axisColor)
                     .text(formatted);
             }
@@ -597,14 +663,18 @@ export class Visual implements IVisual {
         ranges: VisualFormattingSettingsModel["qualitativeRanges"],
         bgBar: VisualFormattingSettingsModel["backgroundBar"],
         labels: VisualFormattingSettingsModel["labelSettings"],
-        axis: VisualFormattingSettingsModel["axisSettings"]
+        axis: VisualFormattingSettingsModel["axisSettings"],
+        titleFmt: VisualFormattingSettingsModel["titleSettings"]
     ): void {
         const viewportWidth = options.viewport.width;
         const viewportHeight = options.viewport.height;
         const showLabels = labels.show.value;
         const labelFontSize = clamp(labels.fontSize.value, 8, 24);
+        const labelFontFamily = labels.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
+        const labelWeight = this.weightFor(labels.bold.value, "600");
+        const labelStyle = labels.italic.value ? "italic" : "normal";
+        const labelDecoration = labels.underline.value ? "underline" : "none";
         const showValue = bullet.showValue.value;
-        const valueColor = bullet.valueColor.value.value;
         const valueFontSize = bullet.valueFontSize.value > 0
             ? clamp(bullet.valueFontSize.value, 6, 30)
             : labelFontSize - 1;
@@ -612,6 +682,10 @@ export class Visual implements IVisual {
 
         const showAxis = axis.show.value;
         const axisFontSize = clamp(axis.fontSize.value, 6, 18);
+        const axisFontFamily = axis.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
+        const axisWeight = this.weightFor(axis.bold.value, "400");
+        const axisStyle = axis.italic.value ? "italic" : "normal";
+        const axisDecoration = axis.underline.value ? "underline" : "none";
         const axisColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.color.value.value;
         const axisLabelText = axis.axisLabel.value || "";
         const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
@@ -620,9 +694,15 @@ export class Visual implements IVisual {
         const gridlineWidth = clamp(axis.gridlineWidth.value, 1, 4);
         const axisAreaWidth = showAxis ? axisFontSize * 4 + 8 + (axisLabelText ? axisLabelFontSize + 4 : 0) : 0;
 
+        // ─── Title (iframe-internal, Policy 1180.2.5) — reserves vertical
+        // space above the chart (see renderHorizontal for the full note).
+        const showTitle = !!titleFmt.showTitle.value && !!titleFmt.titleText.value;
+        const titleFontSize = titleFmt.titleFontSize.value || 14;
+        const titleH = showTitle ? titleFontSize + 12 : 0;
+
         const labelAreaHeight = showLabels ? labelFontSize + 12 : 0;
         const valueAreaHeight = showValue ? valueFontSize + 8 : 0;
-        const chartHeight = Math.max(viewportHeight - labelAreaHeight - valueAreaHeight - 8, 40);
+        const chartHeight = Math.max(viewportHeight - labelAreaHeight - valueAreaHeight - titleH - 8, 40);
         const colWidth = clamp(bullet.rowHeight.value, 20, 100);
         const totalWidth = rows.length * colWidth + axisAreaWidth;
 
@@ -642,6 +722,24 @@ export class Visual implements IVisual {
             this.svgContainer.style.overflowX = "hidden";
         }
 
+        if (showTitle) {
+            const tAlign = textAlignFor(String(titleFmt.titleAlign?.value || "left"));
+            const tx = tAlign === "center" ? viewportWidth / 2 : tAlign === "right" ? viewportWidth - 8 : 8;
+            const tAnchor = tAlign === "center" ? "middle" : tAlign === "right" ? "end" : "start";
+            svg.append("text")
+                .attr("x", tx)
+                .attr("y", titleFontSize + 4)
+                .attr("text-anchor", tAnchor)
+                .attr("class", "bullet-title")
+                .style("font-family", titleFmt.titleFontFamily.value || "Segoe UI, sans-serif")
+                .style("font-size", `${titleFontSize}px`)
+                .style("font-weight", this.weightFor(titleFmt.titleBold.value, "400"))
+                .style("font-style", titleFmt.titleItalic.value ? "italic" : "normal")
+                .style("text-decoration", titleFmt.titleUnderline.value ? "underline" : "none")
+                .style("fill", this.isHighContrast ? this.colorPalette.foreground.value : titleFmt.titleColor.value.value)
+                .text(String(titleFmt.titleText.value));
+        }
+
         rows.forEach((row, idx) => {
             const xCenter = xOffset + idx * colWidth + colWidth / 2;
             const xLeft = xCenter - barWidth / 2;
@@ -650,7 +748,7 @@ export class Visual implements IVisual {
 
             const yScale = scaleLinear()
                 .domain([0, row.maximum])
-                .range([chartHeight + valueAreaHeight, valueAreaHeight])
+                .range([chartHeight + valueAreaHeight + titleH, valueAreaHeight + titleH])
                 .clamp(true);
 
             const g = svg.append("g")
@@ -743,22 +841,26 @@ export class Visual implements IVisual {
                     .attr("y", viewportHeight - 4)
                     .attr("text-anchor", "middle")
                     .attr("class", "bullet-label")
+                    .attr("font-family", labelFontFamily)
                     .attr("font-size", labelFontSize + "px")
-                    .attr("font-weight", "600")
+                    .attr("font-weight", labelWeight)
+                    .attr("font-style", labelStyle)
+                    .attr("text-decoration", labelDecoration)
                     .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : labels.color.value.value)
                     .text(row.category);
             }
 
-            // Value label (top)
+            // Value label (top) — Value Color fx (TEXT-02), resolved
+            // per-row via resolveValueColor (mirrors getBarColor).
             if (showValue) {
                 const formatted = this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string);
                 g.append("text")
                     .attr("x", xCenter)
-                    .attr("y", Math.max(barTopY - 4, valueFontSize))
+                    .attr("y", Math.max(barTopY - 4, titleH + valueFontSize))
                     .attr("text-anchor", "middle")
                     .attr("class", "bullet-value-label")
                     .attr("font-size", valueFontSize + "px")
-                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : valueColor)
+                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : this.resolveValueColor(bullet, row.originalIndex))
                     .text(formatted);
             }
 
@@ -809,7 +911,7 @@ export class Visual implements IVisual {
             const globalMax = Math.max(...rows.map(r => r.maximum));
             const yScale = scaleLinear()
                 .domain([0, globalMax])
-                .range([chartHeight + valueAreaHeight, valueAreaHeight]);
+                .range([chartHeight + valueAreaHeight + titleH, valueAreaHeight + titleH]);
             const axisX = xOffset - 4;
             const chartRight = xOffset + rows.length * colWidth;
             const axisG = svg.append("g").attr("class", "bullet-axis");
@@ -849,7 +951,11 @@ export class Visual implements IVisual {
                     .attr("dy", "0.35em")
                     .attr("text-anchor", "end")
                     .attr("class", "bullet-axis-label")
+                    .attr("font-family", axisFontFamily)
                     .attr("font-size", axisFontSize + "px")
+                    .attr("font-weight", axisWeight)
+                    .attr("font-style", axisStyle)
+                    .attr("text-decoration", axisDecoration)
                     .attr("fill", axisColor)
                     .text(formatted);
             }
@@ -950,6 +1056,23 @@ export class Visual implements IVisual {
         const defaultColor = bullet.barColor.value.value;
         const instanceObjects = this.categoricalCategories?.objects?.[originalIndex];
         return this.barColorHelper?.getColorForMeasure(instanceObjects, "barColor") ?? defaultColor;
+    }
+
+    /** Resolve the data-label (Value Color) fx (TEXT-02): mirrors
+     *  getBarColor() exactly, distinct property, same per-row resolution
+     *  against this row's own per-instance object overrides. */
+    private resolveValueColor(bullet: VisualFormattingSettingsModel["bulletSettings"], originalIndex: number): string {
+        const defaultColor = bullet.valueColor.value.value;
+        const instanceObjects = this.categoricalCategories?.objects?.[originalIndex];
+        return this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? defaultColor;
+    }
+
+    /** weightFor(bold, restWeight) idiom (TEXT-01, D-06) — bold on renders
+     *  700; bold off renders the surface's own pre-existing hardcoded
+     *  weight (or "400"/unset if none existed) — matches the
+     *  pbiVarianceWaterfall/pbiNowVsThen/pbiKpiSparklineCard precedent. */
+    private weightFor(bold: boolean | undefined, restWeight: string): string {
+        return bold ? "700" : restWeight;
     }
 
     /** Resolve the background-bar transparency percentage, honouring the

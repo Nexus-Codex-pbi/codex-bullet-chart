@@ -9,6 +9,16 @@ import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
 import { BackgroundSettings } from "../../_shared/formatting/backgroundSettings";
+import { TitleSettings } from "../../_shared/formatting/titleSettings";
+import { alignSelfFor, textAlignFor } from "../../_shared/formatting/textFormatting";
+
+// TitleSettings now lives in _shared/formatting/ (D-13, D-14 — Plan 10
+// pilot). Re-exported here so visual.ts can import it from "./settings"
+// (mirrors pbiKpiCard's shape). Alignment helpers re-exported too, used
+// only by the Title (chart/row text surfaces keep their existing
+// layout/data-position-determined text-anchor, per 01-11/01-12 precedent —
+// alignment is deliberately NOT added to Labels/Axis in this plan).
+export { TitleSettings, alignSelfFor, textAlignFor };
 
 const ConstantOrRule = powerbi.VisualEnumerationInstanceKinds.ConstantOrRule;
 
@@ -215,10 +225,30 @@ class LabelCardSettings extends FormattingSettingsCard {
         value: true
     });
 
+    // Category label text (.bullet-label, both orientations) — FontControl
+    // composite reuses the existing bare "fontSize" property name
+    // (D-06/D-07: additive-only, no schema rename) alongside NEW sibling
+    // properties (family/bold/italic/underline). Bold defaults true to
+    // match the pre-existing hardcoded font-weight:600 on both
+    // renderHorizontal/renderVertical's category-label render sites
+    // (weightFor idiom in visual.ts, matches pbiVarianceWaterfall/
+    // pbiNowVsThen precedent). Alignment omitted — text-anchor is already
+    // layout-determined per orientation (matches 01-11/01-12 precedent).
     fontSize = new formattingSettings.NumUpDown({
         name: "fontSize",
         displayName: "Font Size",
         value: 12
+    });
+
+    fontFamily = new formattingSettings.FontPicker({ name: "fontFamily", displayName: "Font Family", value: "Segoe UI, Tahoma, Geneva, Verdana, sans-serif" });
+    bold = new formattingSettings.ToggleSwitch({ name: "bold", displayName: "Bold", value: true });
+    italic = new formattingSettings.ToggleSwitch({ name: "italic", displayName: "Italic", value: false });
+    underline = new formattingSettings.ToggleSwitch({ name: "underline", displayName: "Underline", value: false });
+
+    labelFont = new formattingSettings.FontControl({
+        name: "labelFont", displayName: "Font",
+        fontFamily: this.fontFamily, fontSize: this.fontSize,
+        bold: this.bold, italic: this.italic, underline: this.underline,
     });
 
     color = new formattingSettings.ColorPicker({
@@ -232,7 +262,7 @@ class LabelCardSettings extends FormattingSettingsCard {
     displayName: string = "Labels";
     slices: Array<FormattingSettingsSlice> = [
         this.show,
-        this.fontSize,
+        this.labelFont,
         this.color
     ];
 }
@@ -252,10 +282,29 @@ class AxisCardSettings extends FormattingSettingsCard {
         value: 5
     });
 
+    // Axis tick label text (.bullet-axis-label, both orientations) —
+    // FontControl composite reuses the existing bare "fontSize" property
+    // name (D-06/D-07: additive-only, no schema rename) alongside NEW
+    // sibling properties (family/bold/italic/underline). Bold defaults
+    // false — tick labels never had a hardcoded font-weight (unlike the
+    // axis title/showAxisTitles feature, deliberately left out of this
+    // plan's scope, still hardcoded weight:600). Alignment omitted —
+    // tick text-anchor is layout-determined.
     fontSize = new formattingSettings.NumUpDown({
         name: "fontSize",
         displayName: "Font Size",
         value: 10
+    });
+
+    fontFamily = new formattingSettings.FontPicker({ name: "fontFamily", displayName: "Font Family", value: "Segoe UI, Tahoma, Geneva, Verdana, sans-serif" });
+    bold = new formattingSettings.ToggleSwitch({ name: "bold", displayName: "Bold", value: false });
+    italic = new formattingSettings.ToggleSwitch({ name: "italic", displayName: "Italic", value: false });
+    underline = new formattingSettings.ToggleSwitch({ name: "underline", displayName: "Underline", value: false });
+
+    tickFont = new formattingSettings.FontControl({
+        name: "tickFont", displayName: "Font",
+        fontFamily: this.fontFamily, fontSize: this.fontSize,
+        bold: this.bold, italic: this.italic, underline: this.underline,
     });
 
     color = new formattingSettings.ColorPicker({
@@ -327,7 +376,7 @@ class AxisCardSettings extends FormattingSettingsCard {
     slices: Array<FormattingSettingsSlice> = [
         this.show,
         this.tickCount,
-        this.fontSize,
+        this.tickFont,
         this.color,
         this.axisLabel,
         this.labelFontSize,
@@ -341,6 +390,7 @@ class AxisCardSettings extends FormattingSettingsCard {
 }
 
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {
+    titleSettings = new TitleSettings();
     bulletSettings = new BulletCardSettings();
     qualitativeRanges = new QualitativeRangesSettings();
     backgroundBar = new BackgroundBarSettings();
@@ -365,6 +415,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     }
 
     cards = [
+        this.titleSettings,
         this.bulletSettings,
         this.qualitativeRanges,
         this.backgroundBar,
