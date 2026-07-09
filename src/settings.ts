@@ -8,6 +8,8 @@ import FormattingSettingsCard = formattingSettings.SimpleCard;
 import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
+import { BackgroundSettings } from "../../_shared/formatting/backgroundSettings";
+
 const ConstantOrRule = powerbi.VisualEnumerationInstanceKinds.ConstantOrRule;
 
 class BulletCardSettings extends FormattingSettingsCard {
@@ -161,6 +163,18 @@ class QualitativeRangesSettings extends FormattingSettingsCard {
 }
 
 class BackgroundBarSettings extends FormattingSettingsCard {
+    // D-03/D-06 migration (superseded, not deleted): this was the suite's
+    // ONLY pre-existing transparency control, and it shipped as a boolean
+    // ToggleSwitch (wrong shape per the suite standard). It stays DECLARED
+    // here (GUID-schema-lock — capabilities.json objects/properties can
+    // never be removed once shipped) and is still READ at render time
+    // (see visual.ts, both background-bar call sites) purely for the
+    // old-report migration path: a saved report with `transparent: true`
+    // and the new `transparency` slider still at its untouched default (0)
+    // is mapped to transparency=100 at render. It is removed from `slices`
+    // below so it no longer appears in the format pane — the new
+    // `transparency` Slider is the only control a user can touch going
+    // forward.
     transparent = new formattingSettings.ToggleSwitch({
         name: "transparent",
         displayName: "Transparent",
@@ -176,11 +190,21 @@ class BackgroundBarSettings extends FormattingSettingsCard {
         instanceKind: ConstantOrRule
     });
 
+    transparency = new formattingSettings.Slider({
+        name: "transparency",
+        displayName: "Transparency",
+        value: 0,
+        options: {
+            minValue: { type: powerbi.visuals.ValidatorType.Min, value: 0 },
+            maxValue: { type: powerbi.visuals.ValidatorType.Max, value: 100 }
+        }
+    });
+
     name: string = "backgroundBar";
     displayName: string = "Background Bar";
     slices: Array<FormattingSettingsSlice> = [
-        this.transparent,
-        this.color
+        this.color,
+        this.transparency
     ];
 }
 
@@ -322,6 +346,30 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     backgroundBar = new BackgroundBarSettings();
     labelSettings = new LabelCardSettings();
     axisSettings = new AxisCardSettings();
+    background = new BackgroundSettings();
 
-    cards = [this.bulletSettings, this.qualitativeRanges, this.backgroundBar, this.labelSettings, this.axisSettings];
+    constructor() {
+        super();
+        // D-06 default-preservation override (per-visual instance only —
+        // _shared/formatting/backgroundSettings.ts itself is untouched,
+        // D-11): pbiBulletChart's PRE-EXISTING default was "no outer
+        // background ever painted" — confirmed via direct inspection of
+        // style/visual.less: `.bullet-chart-container` (the outer render
+        // root appended to options.element) has no background-color rule
+        // anywhere. The frozen shared Background card's own default
+        // (opaque white, transparency 0) would regress every old saved
+        // report to a suddenly-opaque white container. Overriding the
+        // TRANSPARENCY default to 100 makes toRgba(...) resolve to alpha 0
+        // regardless of colour — pixel-identical to "nothing painted".
+        this.background.transparency.value = 100;
+    }
+
+    cards = [
+        this.bulletSettings,
+        this.qualitativeRanges,
+        this.backgroundBar,
+        this.labelSettings,
+        this.axisSettings,
+        this.background
+    ];
 }
