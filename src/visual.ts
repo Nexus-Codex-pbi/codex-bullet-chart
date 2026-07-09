@@ -17,9 +17,12 @@ import DataView = powerbi.DataView;
 import { FormattingSettingsService } from "powerbi-visuals-utils-formattingmodel";
 import { scaleLinear } from "d3-scale";
 import { select } from "d3-selection";
+import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
+import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 
 import { VisualFormattingSettingsModel } from "./settings";
 import { CODEX_TOKENS, formatValue, clamp } from "./utils";
+import { toRgba } from "../../_shared/formatting/colorHelpers";
 
 import "./../style/visual.less";
 
@@ -49,6 +52,12 @@ export class Visual implements IVisual {
 
     // State for tooltips and cross-filtering
     private rowSelectionIds: ISelectionId[] = [];
+
+    // Conditional formatting (fx) state — Bar Colour (TRANS-04): the raw
+    // categorical categories column (for per-row `.objects[originalIndex]`
+    // override reads) and the ColorHelper resolved once per update().
+    private categoricalCategories: powerbi.DataViewCategoryColumn | undefined;
+    private barColorHelper: ColorHelper | null = null;
 
     constructor(options: VisualConstructorOptions) {
         this.formattingSettingsService = new FormattingSettingsService();
@@ -101,6 +110,22 @@ export class Visual implements IVisual {
             const bgBar = this.formattingSettings.backgroundBar;
             const labels = this.formattingSettings.labelSettings;
             const axis = this.formattingSettings.axisSettings;
+
+            // ─── Dedicated outer background layer (D-05) ───────────────
+            // Suite-wide shared Background card (Colour + Transparency,
+            // sourced from _shared/formatting/), painted on `this.container`
+            // — the outer render root appended directly to options.element
+            // — never on the existing backgroundBar region colour. Its
+            // transparency default is overridden to 100 in settings.ts
+            // specifically so an OLD saved report (this property never
+            // previously existed) renders alpha 0 — pixel-identical to
+            // "nothing painted" (D-06).
+            const background = this.formattingSettings.background;
+            const outerBgHex = background.backgroundColor.value?.value ?? "#ffffff";
+            const outerBgTransparencyPct = background.transparency.value ?? 100;
+            this.container.style.backgroundColor = this.isHighContrast
+                ? ""
+                : toRgba(outerBgHex, outerBgTransparencyPct);
 
             // Clear previous render
             while (this.svgContainer.firstChild) {
@@ -198,6 +223,30 @@ export class Visual implements IVisual {
                     );
                 }
             }
+
+            // ─── Conditional formatting (fx) wiring — Bar Colour (TRANS-04) ──
+            // bullet.barColor already carried a bare `instanceKind:
+            // ConstantOrRule` declaration but with no
+            // selector/altConstantSelector wired it was inert (Pitfall 5).
+            // Wired here: a dataViewWildcard selector (so a rule can match
+            // this property's instances/totals) + an altConstantSelector
+            // bound to the first row's selectionId (the "set for all"
+            // swatch edit path), resolved per-row at render via
+            // ColorHelper.getColorForMeasure against each category's own
+            // per-instance object overrides (categories.objects[originalIndex]) —
+            // same pattern already proven on pbiProgressBarCard's Fixed Colour.
+            this.categoricalCategories = categories;
+            bullet.barColor.selector = dataViewWildcard.createDataViewWildcardSelector(
+                dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
+            );
+            bullet.barColor.altConstantSelector = this.rowSelectionIds[0]
+                ? this.rowSelectionIds[0].getSelector()
+                : undefined;
+            this.barColorHelper = new ColorHelper(
+                this.colorPalette,
+                { objectName: "bulletSettings", propertyName: "barColor" },
+                bullet.barColor.value.value
+            );
 
             // Render based on orientation
             const orientation = bullet.orientation.value.value as string;
@@ -324,14 +373,20 @@ export class Visual implements IVisual {
                     .attr("fill", hcRangeFill || ranges.goodColor.value.value)
                     .attr("opacity", this.isHighContrast ? 0.6 : 1)
                     .attr("rx", 2);
-            } else if (!bgBar.transparent.value) {
-                // Configurable background when ranges disabled
+            } else {
+                // Configurable background when ranges disabled. Always
+                // render the rect — transparency is expressed via alpha,
+                // never by omitting the element (D-05) — with the D-06
+                // old-report migration read (see resolveBackgroundBarTransparency).
+                const bgBarTransparencyPct = this.resolveBackgroundBarTransparency(bgBar);
                 g.append("rect")
                     .attr("x", 0)
                     .attr("y", rangeTop)
                     .attr("width", chartWidth)
                     .attr("height", rangeHeight)
-                    .attr("fill", this.isHighContrast ? this.colorPalette.background.value : bgBar.color.value.value)
+                    .attr("fill", this.isHighContrast
+                        ? this.colorPalette.background.value
+                        : toRgba(bgBar.color.value.value ?? "#f0eee6", bgBarTransparencyPct))
                     .attr("rx", 2);
             }
 
@@ -342,7 +397,7 @@ export class Visual implements IVisual {
                 .attr("y", yTop)
                 .attr("width", Math.max(barWidth, 1))
                 .attr("height", barHeight)
-                .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : bullet.barColor.value.value)
+                .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : this.getBarColor(bullet, row.originalIndex))
                 .attr("rx", barHeight / 4);
 
             // Target marker line
@@ -636,13 +691,20 @@ export class Visual implements IVisual {
                     .attr("fill", hcRangeFill || ranges.goodColor.value.value)
                     .attr("opacity", this.isHighContrast ? 0.6 : 1)
                     .attr("rx", 2);
-            } else if (!bgBar.transparent.value) {
+            } else {
+                // Always render the rect — transparency is expressed via
+                // alpha, never by omitting the element (D-05) — with the
+                // D-06 old-report migration read (see
+                // resolveBackgroundBarTransparency).
+                const bgBarTransparencyPct = this.resolveBackgroundBarTransparency(bgBar);
                 g.append("rect")
                     .attr("x", rangeLeft)
                     .attr("y", yScale(row.maximum))
                     .attr("width", rangeWidth)
                     .attr("height", chartHeight)
-                    .attr("fill", this.isHighContrast ? this.colorPalette.background.value : bgBar.color.value.value)
+                    .attr("fill", this.isHighContrast
+                        ? this.colorPalette.background.value
+                        : toRgba(bgBar.color.value.value ?? "#f0eee6", bgBarTransparencyPct))
                     .attr("rx", 2);
             }
 
@@ -654,7 +716,7 @@ export class Visual implements IVisual {
                 .attr("y", barTopY)
                 .attr("width", barWidth)
                 .attr("height", Math.max(barHeightPx, 1))
-                .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : bullet.barColor.value.value)
+                .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : this.getBarColor(bullet, row.originalIndex))
                 .attr("rx", barWidth / 4);
 
             // Target marker line
@@ -877,6 +939,33 @@ export class Visual implements IVisual {
             return "$" + formatValue(value, "auto", 1);
         }
         return formatValue(value, "auto", 1);
+    }
+
+    /** Get bar colour — per-row Bar Colour fx resolution (TRANS-04): reads
+     *  the rule-evaluated fill (if a rule is set) via the official
+     *  ColorHelper.getColorForMeasure path against this row's own
+     *  per-instance object overrides, falling back to the static
+     *  format-pane value otherwise. */
+    private getBarColor(bullet: VisualFormattingSettingsModel["bulletSettings"], originalIndex: number): string {
+        const defaultColor = bullet.barColor.value.value;
+        const instanceObjects = this.categoricalCategories?.objects?.[originalIndex];
+        return this.barColorHelper?.getColorForMeasure(instanceObjects, "barColor") ?? defaultColor;
+    }
+
+    /** Resolve the background-bar transparency percentage, honouring the
+     *  D-06 old-report migration path: this visual's ONLY pre-existing
+     *  transparency control was the (now-retired) `transparent` boolean
+     *  ToggleSwitch. If the new `transparency` slider is still at its
+     *  untouched default (0) AND the old boolean is `true` on the saved
+     *  report, map to full transparency (100) so the old report keeps
+     *  rendering as fully transparent. Otherwise the new slider value
+     *  drives — the slider always wins once a user has actually set it. */
+    private resolveBackgroundBarTransparency(bgBar: VisualFormattingSettingsModel["backgroundBar"]): number {
+        const sliderValue = bgBar.transparency.value ?? 0;
+        if (sliderValue === 0 && bgBar.transparent.value === true) {
+            return 100;
+        }
+        return sliderValue;
     }
 
     public destroy(): void {
