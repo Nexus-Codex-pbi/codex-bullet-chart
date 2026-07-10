@@ -101,6 +101,26 @@ class BulletCardSettings extends FormattingSettingsCard {
         value: 0
     });
 
+    // v2 board look (01-17): optional quantised measure-bar mode — the
+    // measure renders as discrete blocks (equaliser DNA, DESIGN-LANGUAGE
+    // §5) instead of a solid bar. Genuinely optional per the board
+    // ("solid and quantised side by side" as equal options), default OFF —
+    // same precedent as pbiProgressBarCard's quantisedMode (01-16).
+    quantisedMode = new formattingSettings.ToggleSwitch({
+        name: "quantisedMode",
+        displayName: "Quantised Mode",
+        description: "Render the measure as discrete blocks instead of a solid bar",
+        value: false
+    });
+
+    // Board note: "Block count is tweakable in quantised mode".
+    quantisedBlocks = new formattingSettings.NumUpDown({
+        name: "quantisedBlocks",
+        displayName: "Block Count",
+        description: "Number of blocks in quantised mode",
+        value: 20
+    });
+
     name: string = "bulletSettings";
     displayName: string = "Bullet Settings";
     slices: Array<FormattingSettingsSlice> = [
@@ -113,7 +133,9 @@ class BulletCardSettings extends FormattingSettingsCard {
         this.showValue,
         this.valueFormat,
         this.valueColor,
-        this.valueFontSize
+        this.valueFontSize,
+        this.quantisedMode,
+        this.quantisedBlocks
     ];
 }
 

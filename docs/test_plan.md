@@ -84,3 +84,27 @@
 
 ## 14. Render-Nothing Defaults (D-06)
 - [ ] Old saved report with none of the new title/font/alignment properties set renders pixel-identical to pre-upgrade: no title, category labels at weight 600, axis tick labels at normal weight, all at prior default sizes/colours/positions, in both orientations
+## 15. v2 Board Look — Band-Engine Measure (LOOK-03, Phase 1 Plan 17)
+- [ ] With Bar Color at its shipped default and a Target bound: each measure bar tints via the shared band law — at/over target renders the success token, within 90% the warning token, below the danger token — so a column of bullets reads as a RAG column at a glance, in both orientations
+- [ ] Measure bar renders the beveled 3-stop gradient (light/base/dark, mirrors accentBarGradient) with a soft glow on dark backgrounds; glow absent on light backgrounds and under high contrast
+- [ ] No Target bound: measure reads neutral-good (success token) per the shared band() contract
+- [ ] D-16: a user-changed Bar Color swatch renders exactly that colour (gradient/glow treatment still applies); a per-row Bar Color fx rule overrides both, per row
+
+## 16. v2 Board Look — Violet Target Tick (Phase 1 Plan 17)
+- [ ] With Target Color at its shipped default, the target marker renders the suite-wide violet target token (never a band colour), extended past the zone track, rounded, glowing on dark
+- [ ] D-16: a user-set Target Color and/or Target Width still resolve exactly; high contrast uses the foreground-selected system slot
+
+## 17. v2 Board Look — Dim Qualitative Ranges (Phase 1 Plan 17)
+- [ ] With zone colours at their shipped defaults, Poor/Acceptable/Good render as dim steps: danger/warning/success band tokens at 14% opacity, never competing with the measure
+- [ ] D-16: user-set zone colours still resolve (rendered with the same dim-step treatment); high contrast keeps its foreground opacity ladder (0.2/0.4/0.6)
+
+## 18. v2 Board Look — Quantised Mode (Phase 1 Plan 17)
+- [ ] Quantised Mode toggle (Bullet Settings, default OFF) renders the measure as discrete blocks — lit blocks in the band/user colour with glow on dark, unlit blocks in the theme track colour — in both orientations; target tick still renders above the blocks
+- [ ] Block Count property changes the number of blocks (clamped 4–60, default 20)
+- [ ] Default OFF: an old saved report renders the solid measure bar, untouched by the toggle
+
+## 19. v2 Board Look — Signature, Motion, HC (Phase 1 Plan 17)
+- [ ] Corner-bracket card signature renders at top-left/bottom-right, accent (cyan) tinted, glowing on dark only; muted grey on the empty/landing state
+- [ ] Value labels render with tabular numerals (tnum) at weight 700
+- [ ] Measure settles once (≤400ms ease-out) when the data changes — scale-in for the solid bar, fade-in for quantised blocks; resizes and format-pane tweaks do NOT replay it; `prefers-reduced-motion` skips it entirely
+- [ ] High contrast: bars/blocks map to system slots, all glow drops, and each band-driven value label carries a status glyph prefix (✓/!/✕) so nothing reads by colour alone

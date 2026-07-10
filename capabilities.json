@@ -147,6 +147,20 @@
             "numeric": true
           },
           "displayName": "Value Font Size"
+        },
+        "quantisedMode": {
+          "type": {
+            "bool": true
+          },
+          "displayName": "Quantised Mode",
+          "description": "Render the measure as discrete blocks instead of a solid bar"
+        },
+        "quantisedBlocks": {
+          "type": {
+            "numeric": true
+          },
+          "displayName": "Block Count",
+          "description": "Number of blocks in quantised mode"
         }
       },
       "displayName": "Bullet Settings"
