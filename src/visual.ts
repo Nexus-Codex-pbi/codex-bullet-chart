@@ -22,12 +22,12 @@ import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { CODEX_TOKENS, formatValue, clamp } from "./utils";
-import { toRgba } from "../../_shared/formatting/colorHelpers";
-import { Band, Theme, band, bandColor, targetToken, accentToken } from "../../_shared/formatting/bandEngine";
-import { surfaceTokens, TABULAR_NUMS, mix } from "../../_shared/formatting/designTokens";
-import { makeCornerBrackets, CardSignatureHandle } from "../../_shared/formatting/cardSignature";
-import { settle } from "../../_shared/formatting/motion";
-import { applyHighContrast, statusGlyph, HighContrastResolved } from "../../_shared/formatting/highContrast";
+import { toRgba } from "./shared/colorHelpers";
+import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
+import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
+import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
+import { settle } from "./shared/motion";
+import { applyHighContrast, statusGlyph, HighContrastResolved } from "./shared/highContrast";
 
 import "./../style/visual.less";
 

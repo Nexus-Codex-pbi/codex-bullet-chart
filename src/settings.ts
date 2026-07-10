@@ -8,9 +8,9 @@ import FormattingSettingsCard = formattingSettings.SimpleCard;
 import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
-import { BackgroundSettings } from "../../_shared/formatting/backgroundSettings";
-import { TitleSettings } from "../../_shared/formatting/titleSettings";
-import { alignSelfFor, textAlignFor } from "../../_shared/formatting/textFormatting";
+import { BackgroundSettings } from "./shared/backgroundSettings";
+import { TitleSettings } from "./shared/titleSettings";
+import { alignSelfFor, textAlignFor } from "./shared/textFormatting";
 
 // TitleSettings now lives in _shared/formatting/ (D-13, D-14 — Plan 10
 // pilot). Re-exported here so visual.ts can import it from "./settings"
