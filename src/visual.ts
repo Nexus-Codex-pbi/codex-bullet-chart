@@ -41,6 +41,14 @@ const TARGET_COLOR_DEFAULT = "#e60e22";
 const RANGE_POOR_DEFAULT = "#fde8ea";
 const RANGE_ACCEPT_DEFAULT = "#fef3d6";
 const RANGE_GOOD_DEFAULT = "#e0f5ef";
+// Text-surface shipped defaults (D-16 sentinels): designed for light
+// surfaces. When untouched AND the theme resolves dark, render swaps to
+// the theme text token so default text stays readable on dark
+// backgrounds. Light theme stays pixel-identical.
+const LABEL_COLOR_DEFAULT = "#333333";
+const VALUE_COLOR_DEFAULT = "#5e5d5a";
+const AXIS_COLOR_DEFAULT = "#888888";
+const TITLE_COLOR_DEFAULT = "#1a1a2e";
 
 /** Dim-step opacity for qualitative range zones (board: zones "always
  *  sit at 14% opacity so they never compete" with the measure). */
@@ -413,7 +421,7 @@ export class Visual implements IVisual {
         const showTitle = !!titleFmt.showTitle.value && !!titleFmt.titleText.value;
         const titleFontSize = titleFmt.titleFontSize.value || 14;
         const titleH = showTitle ? titleFontSize + 12 : 0;
-        const axisColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.color.value.value;
+        const axisColor = this.textColorFor(axis.color.value.value, AXIS_COLOR_DEFAULT);
         const axisLabelText = axis.axisLabel.value || "";
         const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
         const showGridlines = axis.gridlines.value;
@@ -461,7 +469,7 @@ export class Visual implements IVisual {
                 .style("font-weight", this.weightFor(titleFmt.titleBold.value, "400"))
                 .style("font-style", titleFmt.titleItalic.value ? "italic" : "normal")
                 .style("text-decoration", titleFmt.titleUnderline.value ? "underline" : "none")
-                .style("fill", this.isHighContrast ? this.colorPalette.foreground.value : titleFmt.titleColor.value.value)
+                .style("fill", this.textColorFor(titleFmt.titleColor.value.value, TITLE_COLOR_DEFAULT))
                 .text(String(titleFmt.titleText.value));
         }
 
@@ -626,7 +634,7 @@ export class Visual implements IVisual {
                     .attr("font-weight", labelWeight)
                     .attr("font-style", labelStyle)
                     .attr("text-decoration", labelDecoration)
-                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : labels.color.value.value)
+                    .attr("fill", this.textColorFor(labels.color.value.value, LABEL_COLOR_DEFAULT))
                     .text(row.category);
             }
 
@@ -830,7 +838,7 @@ export class Visual implements IVisual {
         const axisWeight = this.weightFor(axis.bold.value, "400");
         const axisStyle = axis.italic.value ? "italic" : "normal";
         const axisDecoration = axis.underline.value ? "underline" : "none";
-        const axisColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.color.value.value;
+        const axisColor = this.textColorFor(axis.color.value.value, AXIS_COLOR_DEFAULT);
         const axisLabelText = axis.axisLabel.value || "";
         const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
         const showGridlines = axis.gridlines.value;
@@ -884,7 +892,7 @@ export class Visual implements IVisual {
                 .style("font-weight", this.weightFor(titleFmt.titleBold.value, "400"))
                 .style("font-style", titleFmt.titleItalic.value ? "italic" : "normal")
                 .style("text-decoration", titleFmt.titleUnderline.value ? "underline" : "none")
-                .style("fill", this.isHighContrast ? this.colorPalette.foreground.value : titleFmt.titleColor.value.value)
+                .style("fill", this.textColorFor(titleFmt.titleColor.value.value, TITLE_COLOR_DEFAULT))
                 .text(String(titleFmt.titleText.value));
         }
 
@@ -1035,7 +1043,7 @@ export class Visual implements IVisual {
                     .attr("font-weight", labelWeight)
                     .attr("font-style", labelStyle)
                     .attr("text-decoration", labelDecoration)
-                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : labels.color.value.value)
+                    .attr("fill", this.textColorFor(labels.color.value.value, LABEL_COLOR_DEFAULT))
                     .text(row.category);
             }
 
@@ -1254,8 +1262,16 @@ export class Visual implements IVisual {
      *  to the static format-pane value otherwise. (The Bar Colour fx read
      *  moved into resolveMeasure() with the 01-17 v2 look — same
      *  resolution, now part of the D-16 ladder.) */
+    /** D-16 text ladder: HC foreground > user-set colour > (dark theme →
+     *  theme text token) > shipped light default. */
+    private textColorFor(setValue: string, shippedDefault: string): string {
+        if (this.isHighContrast) return this.colorPalette.foreground.value;
+        if (setValue !== shippedDefault) return setValue;
+        return this.theme === "dark" ? surfaceTokens("dark").text : setValue;
+    }
+
     private resolveValueColor(bullet: VisualFormattingSettingsModel["bulletSettings"], originalIndex: number): string {
-        const defaultColor = bullet.valueColor.value.value;
+        const defaultColor = this.textColorFor(bullet.valueColor.value.value, VALUE_COLOR_DEFAULT);
         const instanceObjects = this.categoricalCategories?.objects?.[originalIndex];
         return this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? defaultColor;
     }
