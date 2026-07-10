@@ -16,6 +16,17 @@ Stephen Few bullet chart with actual vs target and qualitative colour bands. Dis
 - **Sort Order** (Optional): Custom sort order (numeric, ascending). If bound, rows are sorted by this value; otherwise, original order is kept.
 
 ## 3. Formatting Options
+**Title**
+- Show Title: Toggle the custom title bar.
+- Title Text: Custom title text.
+- Font Family / Font Size / Bold / Italic / Underline: Full text treatment for the title.
+- Alignment: Left, Center, or Right.
+- Title Color: Colour of the title text.
+
+**Background**
+- Background Color: Colour of the visual's background.
+- Transparency: 0–100% — at 100 the visual sits directly on the report canvas (default), letting page backgrounds and images show through.
+
 **Bullet Settings**
 - Orientation: Horizontal or Vertical.
 - Bar Color: Colour of the actual value bar.
@@ -27,6 +38,8 @@ Stephen Few bullet chart with actual vs target and qualitative colour bands. Dis
 - Value Format: Number, Percent, or Currency (applies when Show Value is enabled).
 - Value Color: Colour of the value text.
 - Value Font Size: Size of the value text.
+- Quantised Mode: Render the actual bar as discrete blocks (equaliser/LED style) instead of a solid bar.
+- Quantised Blocks: Number of blocks in quantised mode (4–60, default 20).
 
 **Qualitative Ranges**
 - Enabled: Toggle display of qualitative background ranges.
@@ -37,18 +50,19 @@ Stephen Few bullet chart with actual vs target and qualitative colour bands. Dis
 - Good Color: Colour for the good range.
 
 **Background Bar**
-- Transparent: If on, the background bar is transparent; otherwise, shows a solid colour.
+- Transparent: If on, the background bar is fully transparent; otherwise, shows the colour below.
 - Color: Colour of the background bar (when Transparent is off).
+- Transparency: 0–100% transparency applied to the background bar colour.
 
 **Label Settings**
 - Show: Toggle display of the category labels.
-- Font Size: Size of the category text.
+- Font Size / Font Family / Bold / Italic / Underline: Full text treatment for the category labels.
 - Color: Colour of the category text.
 
 **Axis Settings**
 - Show: Toggle visibility of the axis (value axis).
 - Tick Count: Number of tick marks on the axis.
-- Font Size: Size of the axis tick labels.
+- Font Size / Font Family / Bold / Italic / Underline: Full text treatment for the axis tick labels.
 - Color: Colour of the axis text.
 - Axis Label: Title for the axis (e.g., 'Units').
 - Label Font Size: Size of the axis title text.
@@ -59,8 +73,14 @@ Stephen Few bullet chart with actual vs target and qualitative colour bands. Dis
 - X Axis Title: Title for the horizontal axis (when orientation is horizontal).
 - Y Axis Title: Title for the vertical axis (when orientation is vertical).
 
+**Conditional Formatting (fx)**
+All key colour properties support Power BI conditional formatting rules (the fx button next to the colour swatch): Bar Color, Target Color, Value Color, the three Qualitative Range colours, Background Bar colour, Label colour, Axis colour, and Gridline colour. Use rules or field values to data-drive colours per measure.
+
 ## 4. Features
 - Horizontal or vertical layout.
+- Custom title bar with full text formatting and alignment.
+- Visual background colour with 0–100% transparency (sits on the canvas by default).
+- Quantised (equaliser/LED block) bar mode with configurable block count.
 - Actual value bar compared to a target line.
 - Qualitative colour ranges (poor/acceptable/good) configurable via thresholds.
 - Optional background bar.
