@@ -25,7 +25,7 @@ import { CODEX_TOKENS, formatValue, clamp } from "./utils";
 import { toRgba } from "./shared/colorHelpers";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
 import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
-import { makeCornerBrackets, CardSignatureHandle } from "./shared/cardSignature";
+import { makeCornerBrackets, CardSignatureHandle, CardSignatureVariant } from "./shared/cardSignature";
 import { settle } from "./shared/motion";
 import { applyHighContrast, statusGlyph, HighContrastResolved } from "./shared/highContrast";
 
@@ -192,13 +192,23 @@ export class Visual implements IVisual {
                 fallbackColor: this.formattingSettings.bulletSettings.barColor.value.value,
             });
 
-            // Corner-bracket signature — accent (cyan) tinted per the board;
-            // glow only on the dark theme, never under HC.
-            const bracketColor = this.hc.active ? this.hc.color : accentToken(this.theme);
-            this.cornerSignature?.update(bracketColor, {
-                glowMix: this.hc.active || this.theme === "light" ? 0 : 55,
-                muted: false,
-            });
+            // Corner-accent signature — user-controllable (Corner Accents
+            // card): show toggle, style variant, auto (theme accent) vs
+            // custom colour. Under HC the system colour always wins.
+            const sig = this.formattingSettings.cardSignature;
+            if (!sig.show.value) {
+                this.cornerSignature?.elements.forEach((el) => { el.style.display = "none"; });
+            } else {
+                const sigVariant = sig.style.value.value as CardSignatureVariant;
+                const bracketColor = this.hc.active
+                    ? this.hc.color
+                    : (sig.autoColor.value ? accentToken(this.theme) : sig.color.value.value);
+                this.cornerSignature?.update(bracketColor, {
+                    variant: sigVariant,
+                    glowMix: this.hc.active || this.theme === "light" ? 0 : 55,
+                    muted: false,
+                });
+            }
 
             // Clear previous render
             while (this.svgContainer.firstChild) {
@@ -312,9 +322,12 @@ export class Visual implements IVisual {
             bullet.barColor.selector = dataViewWildcard.createDataViewWildcardSelector(
                 dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
             );
-            bullet.barColor.altConstantSelector = this.rowSelectionIds[0]
-                ? this.rowSelectionIds[0].getSelector()
-                : undefined;
+            // No altConstantSelector: the swatch (constant) edit persists
+            // CARD-LEVEL so it applies to every row and round-trips into the
+            // pane. Binding it to rowSelectionIds[0] (the old shape, copied
+            // from the single-row ProgressBarCard) persisted the constant as
+            // a per-instance override on the FIRST ROW ONLY.
+            bullet.barColor.altConstantSelector = undefined;
             this.barColorHelper = new ColorHelper(
                 this.colorPalette,
                 { objectName: "bulletSettings", propertyName: "barColor" },
@@ -330,9 +343,8 @@ export class Visual implements IVisual {
             bullet.valueColor.selector = dataViewWildcard.createDataViewWildcardSelector(
                 dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
             );
-            bullet.valueColor.altConstantSelector = this.rowSelectionIds[0]
-                ? this.rowSelectionIds[0].getSelector()
-                : undefined;
+            // Card-level constant persistence — same reasoning as barColor.
+            bullet.valueColor.altConstantSelector = undefined;
             this.valueColorHelper = new ColorHelper(
                 this.colorPalette,
                 { objectName: "bulletSettings", propertyName: "valueColor" },
@@ -1196,8 +1208,13 @@ export class Visual implements IVisual {
     }
 
     private renderEmpty(): void {
-        // Muted card signature on the landing/empty state (§4).
-        this.cornerSignature?.update("#8f8ab8", { muted: true });
+        // Muted card signature on the landing/empty state (§4) — still
+        // honours the Corner Accents show toggle.
+        if (this.formattingSettings && !this.formattingSettings.cardSignature.show.value) {
+            this.cornerSignature?.elements.forEach((el) => { el.style.display = "none"; });
+        } else {
+            this.cornerSignature?.update("#8f8ab8", { muted: true });
+        }
         while (this.svgContainer.firstChild) {
             this.svgContainer.removeChild(this.svgContainer.firstChild);
         }

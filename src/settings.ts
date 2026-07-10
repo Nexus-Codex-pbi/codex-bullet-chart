@@ -411,6 +411,52 @@ class AxisCardSettings extends FormattingSettingsCard {
     ];
 }
 
+class CardSignatureSettings extends FormattingSettingsCard {
+    // Corner-accent chrome (the v2 board's card signature). `show` is the
+    // card's top-level toggle; style maps 1:1 to the shared
+    // CardSignatureVariant; colour is auto (theme accent) unless the user
+    // flips autoColor off. Under high contrast the system colour always
+    // wins regardless (the ONE shared HC rule).
+    show = new formattingSettings.ToggleSwitch({
+        name: "show",
+        displayName: "Show",
+        value: true
+    });
+
+    style = new formattingSettings.ItemDropdown({
+        name: "style",
+        displayName: "Style",
+        items: [
+            { displayName: "Corner Brackets", value: "cornerBracket" },
+            { displayName: "Accent Bar", value: "flatBar" },
+            { displayName: "Glass Tube", value: "glassTube" }
+        ],
+        value: { displayName: "Corner Brackets", value: "cornerBracket" }
+    });
+
+    autoColor = new formattingSettings.ToggleSwitch({
+        name: "autoColor",
+        displayName: "Auto Color",
+        description: "Tint by the theme accent; turn off to pick a custom color",
+        value: true
+    });
+
+    color = new formattingSettings.ColorPicker({
+        name: "color",
+        displayName: "Custom Color",
+        value: { value: "#8f8ab8" }
+    });
+
+    name: string = "cardSignature";
+    displayName: string = "Corner Accents";
+    topLevelSlice = this.show;
+    slices: Array<FormattingSettingsSlice> = [
+        this.style,
+        this.autoColor,
+        this.color
+    ];
+}
+
 export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     titleSettings = new TitleSettings();
     bulletSettings = new BulletCardSettings();
@@ -419,6 +465,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     labelSettings = new LabelCardSettings();
     axisSettings = new AxisCardSettings();
     background = new BackgroundSettings();
+    cardSignature = new CardSignatureSettings();
 
     constructor() {
         super();
@@ -443,6 +490,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
         this.backgroundBar,
         this.labelSettings,
         this.axisSettings,
-        this.background
+        this.background,
+        this.cardSignature
     ];
 }
