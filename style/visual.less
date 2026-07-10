@@ -25,7 +25,10 @@
     overflow: hidden;
     font-family: @font-stack;
     box-sizing: border-box;
-    padding: 4px;
+    // Edge-to-edge (house style): the chart owns its own spacing via its
+    // layout margins; container padding only insets content away from the
+    // corner-accent chrome. Zeroed 2026-07-10 (Neil).
+    padding: 0;
 }
 
 .bullet-chart-svg-area {
