@@ -110,6 +110,8 @@ export class Visual implements IVisual {
     private theme: Theme = "dark";
     private hc: HighContrastResolved = applyHighContrast(null);
     private cornerSignature: CardSignatureHandle | null = null;
+    // Resolved theme-source hex — the base surface value labels blend against.
+    private themeBaseHex: string = "#ffffff";
     private lastDataSignature: string | null = null;
     private shouldSettle: boolean = false;
 
@@ -206,10 +208,17 @@ export class Visual implements IVisual {
             // via the host palette instead of assuming white (2026-07-11:
             // dark report pages resolved "light", leaving default text
             // grey-on-black).
-            const themeSourceHex = outerBgTransparencyPct >= 100
-                ? (this.colorPalette.background?.value ?? outerBgHex)
-                : outerBgHex;
+            // Theme-source ladder: a visible own background governs; a
+            // USER-SET hex governs even when fully transparent (explicit
+            // theme hint — matching a black page the palette can't see,
+            // Neil 2026-07-11); only the untouched default falls through
+            // to the report theme's palette background.
+            const bgHexIsUserSet = outerBgHex.toLowerCase() !== "#ffffff";
+            const themeSourceHex = (outerBgTransparencyPct < 100 || bgHexIsUserSet)
+                ? outerBgHex
+                : (this.colorPalette.background?.value ?? outerBgHex);
             this.theme = themeFor(themeSourceHex);
+            this.themeBaseHex = themeSourceHex;
             this.hc = applyHighContrast(this.colorPalette, {
                 fallbackColor: this.formattingSettings.bulletSettings.barColor.value.value,
             });
@@ -670,7 +679,7 @@ export class Visual implements IVisual {
                     .attr("font-size", valueFontSize + "px")
                     .attr("font-weight", "700")
                     .style("font-feature-settings", TABULAR_NUMS)
-                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : this.resolveValueColor(bullet, row.originalIndex))
+                    .attr("fill", this.resolveValueColor(bullet, ranges, row))
                     .text(hcGlyph + formatted);
             }
 
@@ -786,10 +795,13 @@ export class Visual implements IVisual {
         }
 
         // Axis titles (horizontal mode: X = value axis below, Y = category axis left)
+        // xAxisTitle is legacy (retired from the pane — old reports had
+        // showAxisTitles on if they used it). yAxisTitle is the live
+        // Category Axis Label: renders whenever text is set.
         const showAxisTitles = axis.showAxisTitles.value;
-        const xAxisTitleText = axis.xAxisTitle.value || "";
+        const xAxisTitleText = showAxisTitles ? (axis.xAxisTitle.value || "") : "";
         const yAxisTitleText = axis.yAxisTitle.value || "";
-        if (showAxisTitles) {
+        if (xAxisTitleText || yAxisTitleText) {
             const axisTitleFontSize = axisFontSize + 2;
             const titleColor = this.isHighContrast ? this.colorPalette.foreground.value : axisColor;
             const svgEl = svg;
@@ -1077,7 +1089,7 @@ export class Visual implements IVisual {
                     .attr("font-size", valueFontSize + "px")
                     .attr("font-weight", "700")
                     .style("font-feature-settings", TABULAR_NUMS)
-                    .attr("fill", this.isHighContrast ? this.colorPalette.foreground.value : this.resolveValueColor(bullet, row.originalIndex))
+                    .attr("fill", this.resolveValueColor(bullet, ranges, row))
                     .text(hcGlyph + formatted);
             }
 
@@ -1194,10 +1206,13 @@ export class Visual implements IVisual {
         }
 
         // Axis titles (vertical mode: X = category axis bottom, Y = value axis left)
+        // xAxisTitle is legacy (retired from the pane — old reports had
+        // showAxisTitles on if they used it). yAxisTitle is the live
+        // Category Axis Label: renders whenever text is set.
         const showAxisTitles = axis.showAxisTitles.value;
-        const xAxisTitleText = axis.xAxisTitle.value || "";
+        const xAxisTitleText = showAxisTitles ? (axis.xAxisTitle.value || "") : "";
         const yAxisTitleText = axis.yAxisTitle.value || "";
-        if (showAxisTitles) {
+        if (xAxisTitleText || yAxisTitleText) {
             const axisTitleFontSize = axisFontSize + 2;
             const titleColor = this.isHighContrast ? this.colorPalette.foreground.value : axisColor;
             const svgEl = svg;
@@ -1291,10 +1306,35 @@ export class Visual implements IVisual {
         return clamp(pct ?? 14, 0, 100) / 100;
     }
 
-    private resolveValueColor(bullet: VisualFormattingSettingsModel["bulletSettings"], originalIndex: number): string {
-        const defaultColor = this.textColorFor(bullet.valueColor.value.value, VALUE_COLOR_DEFAULT);
-        const instanceObjects = this.categoricalCategories?.objects?.[originalIndex];
-        return this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? defaultColor;
+    private resolveValueColor(
+        bullet: VisualFormattingSettingsModel["bulletSettings"],
+        ranges: VisualFormattingSettingsModel["qualitativeRanges"],
+        row: BulletRow
+    ): string {
+        const set = bullet.valueColor.value.value;
+        const instanceObjects = this.categoricalCategories?.objects?.[row.originalIndex];
+        const fxResolved = this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? set;
+        if (fxResolved !== set) return fxResolved;
+        if (this.isHighContrast) return this.colorPalette.foreground.value;
+        if (set !== VALUE_COLOR_DEFAULT) return set;
+        // Untouched default: contrast against the SURFACE the label sits
+        // on — the qualitative zone blended over the base at the current
+        // zone Visibility (Neil 2026-07-11: raising zone visibility made
+        // theme-picked text unreadable on bright zones). At the shipped
+        // 14% the blend ~= base, so this degrades to the theme pick.
+        let surface = this.themeBaseHex;
+        if (ranges.enabled.value && row.maximum > 0) {
+            const pct = (row.actual / row.maximum) * 100;
+            const poor = clamp(ranges.poorThreshold.value, 0, 100);
+            const acc = Math.max(clamp(ranges.acceptableThreshold.value, 0, 100), poor);
+            const zoneHex = pct < poor
+                ? this.resolveZoneColor(ranges.poorColor.value.value, RANGE_POOR_DEFAULT, "danger")
+                : pct < acc
+                    ? this.resolveZoneColor(ranges.acceptableColor.value.value, RANGE_ACCEPT_DEFAULT, "warning")
+                    : this.resolveZoneColor(ranges.goodColor.value.value, RANGE_GOOD_DEFAULT, "success");
+            surface = mix(this.themeBaseHex, zoneHex, this.zoneOpacity());
+        }
+        return surfaceTokens(themeFor(surface)).text;
     }
 
     // ─── v2 board look (01-17) helpers ─────────────────────────

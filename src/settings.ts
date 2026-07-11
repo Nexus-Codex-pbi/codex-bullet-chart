@@ -405,10 +405,13 @@ class AxisCardSettings extends FormattingSettingsCard {
         value: ""
     });
 
+    // Reinstated 2026-07-11 (Neil: the category axis lost its label —
+    // only xAxisTitle duplicated Axis Label). Same declared property
+    // (schema lock), clearer display name.
     yAxisTitle = new formattingSettings.TextInput({
         name: "yAxisTitle",
-        displayName: "Y Axis Title",
-        placeholder: "Y axis title",
+        displayName: "Category Axis Label",
+        placeholder: "",
         value: ""
     });
 
@@ -420,6 +423,7 @@ class AxisCardSettings extends FormattingSettingsCard {
         this.tickFont,
         this.color,
         this.axisLabel,
+        this.yAxisTitle,
         this.labelFontSize,
         this.gridlines,
         this.gridlineColor,
