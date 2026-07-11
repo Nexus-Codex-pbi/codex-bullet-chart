@@ -236,6 +236,7 @@ export class Visual implements IVisual {
                     : (sig.autoColor.value ? accentToken(this.theme) : sig.color.value.value);
                 this.cornerSignature?.update(bracketColor, {
                     variant: sigVariant,
+                    mirror: sig.mirrorCorners.value,
                     glowMix: this.hc.active || this.theme === "light" ? 0 : 55,
                     muted: false,
                     cardRadius: clamp(sig.cornerRadius.value, 0, 24),
