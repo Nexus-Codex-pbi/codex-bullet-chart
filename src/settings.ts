@@ -372,6 +372,10 @@ class AxisCardSettings extends FormattingSettingsCard {
         value: 1
     });
 
+    // Retired from the pane 2026-07-11 (Neil: duplicates Axis Label).
+    // Properties stay DECLARED (GUID schema lock) and are still READ at
+    // render time so old saved reports keep their titles — same precedent
+    // as backgroundBar.transparent. New reports use axisLabel only.
     showAxisTitles = new formattingSettings.ToggleSwitch({
         name: "showAxisTitles",
         displayName: "Show Axis Titles",
@@ -404,10 +408,7 @@ class AxisCardSettings extends FormattingSettingsCard {
         this.labelFontSize,
         this.gridlines,
         this.gridlineColor,
-        this.gridlineWidth,
-        this.showAxisTitles,
-        this.xAxisTitle,
-        this.yAxisTitle
+        this.gridlineWidth
     ];
 }
 
