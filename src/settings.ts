@@ -183,6 +183,19 @@ class QualitativeRangesSettings extends FormattingSettingsCard {
         instanceKind: ConstantOrRule
     });
 
+    // Zone visibility — the board's 14%-dim law becomes the DEFAULT, not
+    // a hard lock (Neil 2026-07-11: brighter zone colours showed no
+    // visible change at a fixed 14% alpha).
+    opacity = new formattingSettings.Slider({
+        name: "opacity",
+        displayName: "Visibility (%)",
+        value: 14,
+        options: {
+            minValue: { type: powerbi.visuals.ValidatorType.Min, value: 0 },
+            maxValue: { type: powerbi.visuals.ValidatorType.Max, value: 100 }
+        }
+    });
+
     name: string = "qualitativeRanges";
     displayName: string = "Qualitative Ranges";
     slices: Array<FormattingSettingsSlice> = [
@@ -191,7 +204,8 @@ class QualitativeRangesSettings extends FormattingSettingsCard {
         this.acceptableThreshold,
         this.poorColor,
         this.acceptableColor,
-        this.goodColor
+        this.goodColor,
+        this.opacity
     ];
 }
 

@@ -531,7 +531,7 @@ export class Visual implements IVisual {
                     .attr("width", xScale(row.maximum * poorPct))
                     .attr("height", rangeHeight)
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.poorColor.value.value, RANGE_POOR_DEFAULT, "danger"))
-                    .attr("opacity", this.isHighContrast ? 0.2 : ZONE_DIM_OPACITY)
+                    .attr("opacity", this.isHighContrast ? 0.2 : this.zoneOpacity())
                     .attr("rx", 3);
 
                 // Acceptable band (poorThreshold to acceptableThreshold)
@@ -541,7 +541,7 @@ export class Visual implements IVisual {
                     .attr("width", xScale(row.maximum * acceptPct) - xScale(row.maximum * poorPct))
                     .attr("height", rangeHeight)
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.acceptableColor.value.value, RANGE_ACCEPT_DEFAULT, "warning"))
-                    .attr("opacity", this.isHighContrast ? 0.4 : ZONE_DIM_OPACITY);
+                    .attr("opacity", this.isHighContrast ? 0.4 : this.zoneOpacity());
 
                 // Good band (acceptableThreshold to max)
                 g.append("rect")
@@ -550,7 +550,7 @@ export class Visual implements IVisual {
                     .attr("width", chartWidth - xScale(row.maximum * acceptPct))
                     .attr("height", rangeHeight)
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.goodColor.value.value, RANGE_GOOD_DEFAULT, "success"))
-                    .attr("opacity", this.isHighContrast ? 0.6 : ZONE_DIM_OPACITY)
+                    .attr("opacity", this.isHighContrast ? 0.6 : this.zoneOpacity())
                     .attr("rx", 3);
             } else {
                 // Configurable background when ranges disabled. Always
@@ -941,7 +941,7 @@ export class Visual implements IVisual {
                     .attr("width", rangeWidth)
                     .attr("height", yScale(0) - yScale(row.maximum * poorPct))
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.poorColor.value.value, RANGE_POOR_DEFAULT, "danger"))
-                    .attr("opacity", this.isHighContrast ? 0.2 : ZONE_DIM_OPACITY)
+                    .attr("opacity", this.isHighContrast ? 0.2 : this.zoneOpacity())
                     .attr("rx", 3);
 
                 // Acceptable band (middle)
@@ -951,7 +951,7 @@ export class Visual implements IVisual {
                     .attr("width", rangeWidth)
                     .attr("height", yScale(row.maximum * poorPct) - yScale(row.maximum * acceptPct))
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.acceptableColor.value.value, RANGE_ACCEPT_DEFAULT, "warning"))
-                    .attr("opacity", this.isHighContrast ? 0.4 : ZONE_DIM_OPACITY);
+                    .attr("opacity", this.isHighContrast ? 0.4 : this.zoneOpacity());
 
                 // Good band (top)
                 g.append("rect")
@@ -960,7 +960,7 @@ export class Visual implements IVisual {
                     .attr("width", rangeWidth)
                     .attr("height", yScale(row.maximum * acceptPct) - yScale(row.maximum))
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.goodColor.value.value, RANGE_GOOD_DEFAULT, "success"))
-                    .attr("opacity", this.isHighContrast ? 0.6 : ZONE_DIM_OPACITY)
+                    .attr("opacity", this.isHighContrast ? 0.6 : this.zoneOpacity())
                     .attr("rx", 3);
             } else {
                 // Always render the rect — transparency is expressed via
@@ -1283,6 +1283,12 @@ export class Visual implements IVisual {
         if (this.isHighContrast) return this.colorPalette.foreground.value;
         if (setValue !== shippedDefault) return setValue;
         return this.theme === "dark" ? surfaceTokens("dark").text : setValue;
+    }
+
+    /** User-adjustable zone visibility; shipped default = the board's 14%. */
+    private zoneOpacity(): number {
+        const pct = this.formattingSettings?.qualitativeRanges?.opacity?.value;
+        return clamp(pct ?? 14, 0, 100) / 100;
     }
 
     private resolveValueColor(bullet: VisualFormattingSettingsModel["bulletSettings"], originalIndex: number): string {
