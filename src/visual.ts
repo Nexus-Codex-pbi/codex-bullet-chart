@@ -193,9 +193,16 @@ export class Visual implements IVisual {
 
             // ─── v2 board look (01-17): theme + the single HC rule ─────
             // Theme keys off the resolved outer background hex (pbiKpiCard
-            // pilot convention); HC resolution routed through the ONE shared
-            // fallback rule instead of a per-visual reinvention.
-            this.theme = themeFor(outerBgHex);
+            // pilot convention). When our Background is fully transparent
+            // (the shipped default) the visual shows the PAGE, not its own
+            // hex — so derive the theme from the report theme's background
+            // via the host palette instead of assuming white (2026-07-11:
+            // dark report pages resolved "light", leaving default text
+            // grey-on-black).
+            const themeSourceHex = outerBgTransparencyPct >= 100
+                ? (this.colorPalette.background?.value ?? outerBgHex)
+                : outerBgHex;
+            this.theme = themeFor(themeSourceHex);
             this.hc = applyHighContrast(this.colorPalette, {
                 fallbackColor: this.formattingSettings.bulletSettings.barColor.value.value,
             });
