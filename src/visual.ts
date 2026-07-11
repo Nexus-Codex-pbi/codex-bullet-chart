@@ -670,8 +670,21 @@ export class Visual implements IVisual {
                 // band reading is never colour-only — the status glyph rides
                 // along (§8).
                 const hcGlyph = this.hc.active && measureBand ? statusGlyph(measureBand) + " " : "";
+                // Collision nudge: when the target marker lands at the bar
+                // end, shift the label past it instead of overlapping
+                // (Neil 2026-07-12). Text width estimated at 0.62em/char
+                // (tabular numerals).
+                let valueLabelX = Math.max(barWidth, 1) + 6;
+                if (row.target !== null) {
+                    const tX = xScale(row.target);
+                    const tHalf = bullet.targetWidth.value / 2 + 4;
+                    const estW = (hcGlyph + formatted).length * valueFontSize * 0.62;
+                    if (tX + tHalf > valueLabelX && tX - tHalf < valueLabelX + estW) {
+                        valueLabelX = tX + tHalf + 2;
+                    }
+                }
                 g.append("text")
-                    .attr("x", Math.max(barWidth, 1) + 6)
+                    .attr("x", valueLabelX)
                     .attr("y", yCenter)
                     .attr("dy", "0.35em")
                     .attr("text-anchor", "start")
@@ -1081,9 +1094,19 @@ export class Visual implements IVisual {
                 // v2: tabular numerals + row weight; HC band reading gets a
                 // status glyph (see renderHorizontal note).
                 const hcGlyph = this.hc.active && measureBand ? statusGlyph(measureBand) + " " : "";
+                // Collision nudge (see renderHorizontal): lift the label
+                // above the target marker when it sits at the bar top.
+                let valueLabelY = Math.max(barTopY - 4, titleH + valueFontSize);
+                if (row.target !== null) {
+                    const tY = yScale(row.target);
+                    const tHalf = bullet.targetWidth.value / 2 + 4;
+                    if (tY - tHalf < valueLabelY && tY + tHalf > valueLabelY - valueFontSize) {
+                        valueLabelY = Math.max(tY - tHalf - 2, titleH + valueFontSize);
+                    }
+                }
                 g.append("text")
                     .attr("x", xCenter)
-                    .attr("y", Math.max(barTopY - 4, titleH + valueFontSize))
+                    .attr("y", valueLabelY)
                     .attr("text-anchor", "middle")
                     .attr("class", "bullet-value-label")
                     .attr("font-size", valueFontSize + "px")
