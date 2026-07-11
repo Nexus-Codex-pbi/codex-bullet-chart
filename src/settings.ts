@@ -9,6 +9,7 @@ import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
 import { BackgroundSettings } from "./shared/backgroundSettings";
+import { BorderSettings } from "./shared/borderSettings";
 import { TitleSettings } from "./shared/titleSettings";
 import { alignSelfFor, textAlignFor } from "./shared/textFormatting";
 
@@ -448,13 +449,21 @@ class CardSignatureSettings extends FormattingSettingsCard {
         value: { value: "#8f8ab8" }
     });
 
+    cornerRadius = new formattingSettings.NumUpDown({
+        name: "cornerRadius",
+        displayName: "Corner Radius",
+        description: "Curve of the corner (px)",
+        value: 10
+    });
+
     name: string = "cardSignature";
     displayName: string = "Corner Accents";
     topLevelSlice = this.show;
     slices: Array<FormattingSettingsSlice> = [
         this.style,
         this.autoColor,
-        this.color
+        this.color,
+        this.cornerRadius
     ];
 }
 
@@ -467,6 +476,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     axisSettings = new AxisCardSettings();
     background = new BackgroundSettings();
     cardSignature = new CardSignatureSettings();
+    visualBorder = new BorderSettings();
 
     constructor() {
         super();
@@ -492,6 +502,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
         this.labelSettings,
         this.axisSettings,
         this.background,
-        this.cardSignature
+        this.cardSignature,
+        this.visualBorder
     ];
 }

@@ -23,6 +23,7 @@ import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { CODEX_TOKENS, formatValue, clamp } from "./utils";
 import { toRgba } from "./shared/colorHelpers";
+import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
 import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle, CardSignatureVariant } from "./shared/cardSignature";
@@ -191,6 +192,12 @@ export class Visual implements IVisual {
                 ? ""
                 : toRgba(outerBgHex, outerBgTransparencyPct);
 
+            // Visual's own Border card (native host border stays off).
+            applyBorder(this.container, this.formattingSettings.visualBorder, {
+                hcActive: this.isHighContrast,
+                hcColor: this.colorPalette.foreground.value,
+            });
+
             // ─── v2 board look (01-17): theme + the single HC rule ─────
             // Theme keys off the resolved outer background hex (pbiKpiCard
             // pilot convention). When our Background is fully transparent
@@ -222,6 +229,7 @@ export class Visual implements IVisual {
                     variant: sigVariant,
                     glowMix: this.hc.active || this.theme === "light" ? 0 : 55,
                     muted: false,
+                    cardRadius: clamp(sig.cornerRadius.value, 0, 24),
                 });
             }
 
