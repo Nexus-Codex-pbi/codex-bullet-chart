@@ -14,6 +14,8 @@
 
 import powerbi from "powerbi-visuals-api";
 import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
+import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
+import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { toRgba } from "./colorHelpers";
 
 import FormattingSettingsCard = formattingSettings.SimpleCard;
@@ -29,7 +31,8 @@ export class BorderSettings extends FormattingSettingsCard {
     color = new formattingSettings.ColorPicker({
         name: "color",
         displayName: "Color",
-        value: { value: "#8f8ab8" }
+        value: { value: "#8f8ab8" },
+        instanceKind: powerbi.VisualEnumerationInstanceKinds.ConstantOrRule
     });
 
     transparency = new formattingSettings.Slider({
@@ -67,22 +70,38 @@ export class BorderSettings extends FormattingSettingsCard {
 }
 
 /** Paint (or clear) the border on the visual's outer render root.
- *  Under high contrast the system foreground wins. */
+ *  Under high contrast the system foreground wins. Pass `palette` +
+ *  `metadataObjects` to honour an fx rule on the colour (the slice's
+ *  selector is wired here too — card-level constant persistence, rules
+ *  per the wildcard; see feedback_pbi_fx_altconstant_first_row_trap). */
 export function applyBorder(
     el: HTMLElement,
     border: BorderSettings | undefined,
-    opts: { hcActive?: boolean; hcColor?: string } = {}
+    opts: { hcActive?: boolean; hcColor?: string; palette?: unknown; metadataObjects?: unknown } = {}
 ): void {
     if (!border || !border.show.value) {
         el.style.border = "";
         el.style.borderRadius = "";
         return;
     }
+    border.color.selector = dataViewWildcard.createDataViewWildcardSelector(
+        dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
+    );
+    border.color.altConstantSelector = undefined;
+    let hex = border.color.value.value;
+    if (opts.palette && opts.metadataObjects !== undefined) {
+        const helper = new ColorHelper(
+            opts.palette as never,
+            { objectName: "visualBorder", propertyName: "color" },
+            hex
+        );
+        hex = helper.getColorForMeasure(opts.metadataObjects as never, "color") ?? hex;
+    }
     const width = Math.max(1, Math.min(8, border.width.value));
     const radius = Math.max(0, Math.min(24, border.radius.value));
     const colorCss = opts.hcActive
-        ? (opts.hcColor ?? border.color.value.value)
-        : toRgba(border.color.value.value, border.transparency.value ?? 0);
+        ? (opts.hcColor ?? hex)
+        : toRgba(hex, border.transparency.value ?? 0);
     el.style.border = `${width}px solid ${colorCss}`;
     el.style.borderRadius = radius > 0 ? `${radius}px` : "";
 }

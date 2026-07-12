@@ -198,6 +198,8 @@ export class Visual implements IVisual {
             applyBorder(this.container, this.formattingSettings.visualBorder, {
                 hcActive: this.isHighContrast,
                 hcColor: this.colorPalette.foreground.value,
+                palette: this.colorPalette,
+                metadataObjects: options.dataViews?.[0]?.metadata?.objects,
             });
 
             // ─── v2 board look (01-17): theme + the single HC rule ─────
