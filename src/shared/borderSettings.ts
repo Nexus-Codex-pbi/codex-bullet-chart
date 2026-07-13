@@ -14,7 +14,6 @@
 
 import powerbi from "powerbi-visuals-api";
 import { formattingSettings } from "powerbi-visuals-utils-formattingmodel";
-import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 import { toRgba } from "./colorHelpers";
 
@@ -74,19 +73,22 @@ export class BorderSettings extends FormattingSettingsCard {
  *  `metadataObjects` to honour an fx rule on the colour (the slice's
  *  selector is wired here too — card-level constant persistence, rules
  *  per the wildcard; see feedback_pbi_fx_altconstant_first_row_trap). */
-export function applyBorder(
-    el: HTMLElement,
+export interface ResolvedBorder { colorCss: string; width: number; radius: number; }
+
+/** Resolve the Border card to concrete paint values (or null when off).
+ *  Wires the fx selector + honours an fx rule; shared by DOM (applyBorder)
+ *  and SVG (visuals draw their own stroke-rect) callers. */
+export function resolveBorder(
     border: BorderSettings | undefined,
     opts: { hcActive?: boolean; hcColor?: string; palette?: unknown; metadataObjects?: unknown } = {}
-): void {
-    if (!border || !border.show.value) {
-        el.style.border = "";
-        el.style.borderRadius = "";
-        return;
-    }
-    border.color.selector = dataViewWildcard.createDataViewWildcardSelector(
-        dataViewWildcard.DataViewWildcardMatchingOption.InstancesAndTotals
-    );
+): ResolvedBorder | null {
+    if (!border || !border.show.value) return null;
+    // The border is a WHOLE-VISUAL (card-level) property, not per-datapoint.
+    // A dataViewWildcard selector reroutes where the constant swatch
+    // persists, so edits never reached the render (Neil 2026-07-13: "border
+    // will not change colour"). No selector: the constant persists at card
+    // level via border.color.value.value; a conditional-formatting RULE
+    // still resolves through metadata.objects (the ColorHelper overlay).
     border.color.altConstantSelector = undefined;
     let hex = border.color.value.value;
     if (opts.palette && opts.metadataObjects !== undefined) {
@@ -95,13 +97,24 @@ export function applyBorder(
             { objectName: "visualBorder", propertyName: "color" },
             hex
         );
+        // Only a persisted RULE fill overrides the constant; when absent,
+        // getColorForMeasure returns the constant we seeded, so this is a
+        // safe no-op for the plain-constant case.
         hex = helper.getColorForMeasure(opts.metadataObjects as never, "color") ?? hex;
     }
     const width = Math.max(1, Math.min(8, border.width.value));
     const radius = Math.max(0, Math.min(24, border.radius.value));
-    const colorCss = opts.hcActive
-        ? (opts.hcColor ?? hex)
-        : toRgba(hex, border.transparency.value ?? 0);
-    el.style.border = `${width}px solid ${colorCss}`;
-    el.style.borderRadius = radius > 0 ? `${radius}px` : "";
+    const colorCss = opts.hcActive ? (opts.hcColor ?? hex) : toRgba(hex, border.transparency.value ?? 0);
+    return { colorCss, width, radius };
+}
+
+export function applyBorder(
+    el: HTMLElement,
+    border: BorderSettings | undefined,
+    opts: { hcActive?: boolean; hcColor?: string; palette?: unknown; metadataObjects?: unknown } = {}
+): void {
+    const r = resolveBorder(border, opts);
+    if (!r) { el.style.border = ""; el.style.borderRadius = ""; return; }
+    el.style.border = `${r.width}px solid ${r.colorCss}`;
+    el.style.borderRadius = r.radius > 0 ? `${r.radius}px` : "";
 }
