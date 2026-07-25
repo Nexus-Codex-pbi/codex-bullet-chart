@@ -1306,10 +1306,15 @@ export class Visual implements IVisual {
         if (format === "percent") {
             return (value * 100).toFixed(1) + "%";
         }
+        // #657 — was hardcoded ("auto", 1); now honours the Data Labels card. Defaults are
+        // auto / 1, so saved reports render exactly as before.
+        const lbl = this.formattingSettings.labelSettings as any;
+        const units = String(lbl.displayUnits?.value?.value ?? "auto");
+        const dp = typeof lbl.decimalPlaces?.value === "number" ? lbl.decimalPlaces.value : 1;
         if (format === "currency") {
-            return "$" + formatValue(value, "auto", 1);
+            return "$" + formatValue(value, units, dp);
         }
-        return formatValue(value, "auto", 1);
+        return formatValue(value, units, dp);
     }
 
     /** Resolve the data-label (Value Color) fx (TEXT-02): per-row fx

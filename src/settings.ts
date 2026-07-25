@@ -295,12 +295,35 @@ class LabelCardSettings extends FormattingSettingsCard {
         instanceKind: ConstantOrRule
     });
 
+    // #657 — data-label formatting was hardcoded formatValue(v,"auto",1). Defaults reproduce
+    // that exactly (auto / 1 decimal), so saved reports are unchanged. Additive.
+    displayUnits = new formattingSettings.ItemDropdown({
+        name: "displayUnits",
+        displayName: "Display Units",
+        items: [
+            { displayName: "Auto", value: "auto" },
+            { displayName: "None", value: "none" },
+            { displayName: "Thousands (K)", value: "thousands" },
+            { displayName: "Millions (M)", value: "millions" },
+            { displayName: "Billions (B)", value: "billions" }
+        ],
+        value: { displayName: "Auto", value: "auto" }
+    });
+
+    decimalPlaces = new formattingSettings.NumUpDown({
+        name: "decimalPlaces",
+        displayName: "Decimal Places",
+        value: 1
+    });
+
     name: string = "labelSettings";
     displayName: string = "Labels";
     slices: Array<FormattingSettingsSlice> = [
         this.show,
         this.labelFont,
-        this.color
+        this.color,
+        this.displayUnits,
+        this.decimalPlaces
     ];
 }
 
