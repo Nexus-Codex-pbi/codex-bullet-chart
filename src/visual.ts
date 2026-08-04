@@ -31,6 +31,7 @@ import { settle } from "./shared/motion";
 import { applyHighContrast, statusGlyph, HighContrastResolved } from "./shared/highContrast";
 
 import "./../style/visual.less";
+import { LicenseGate } from "./shared/licensing";
 
 // ─── v2 board look (01-17): D-16 default sentinels ───────────
 // The v2 defaults ship the redesigned look ONLY while the corresponding
@@ -115,7 +116,22 @@ export class Visual implements IVisual {
     private lastDataSignature: string | null = null;
     private shouldSettle: boolean = false;
 
+    private licenseGate: LicenseGate;
+
+    private lastUpdateOptions: VisualUpdateOptions | null = null;
+
+
     constructor(options: VisualConstructorOptions) {
+
+        // NO FREE TIER — an unlicensed user gets the whole visual blocked.
+
+        // The check is async, so re-run the last update once it resolves.
+
+        this.licenseGate = new LicenseGate(options.host, () => {
+
+            if (this.lastUpdateOptions) this.update(this.lastUpdateOptions);
+
+        });
         this.formattingSettingsService = new FormattingSettingsService();
         this.target = options.element;
         this.host = options.host;
@@ -161,6 +177,14 @@ export class Visual implements IVisual {
 
     public update(options: VisualUpdateOptions): void {
         this.eventService.renderingStarted(options);
+        this.lastUpdateOptions = options;
+
+        if (this.licenseGate.blockedThisFrame()) {
+            this.target.style.display = "none";
+            this.eventService.renderingFinished(options);
+            return;
+        }
+        this.target.style.display = "";
 
         try {
             const dataView: DataView = options.dataViews && options.dataViews[0];
