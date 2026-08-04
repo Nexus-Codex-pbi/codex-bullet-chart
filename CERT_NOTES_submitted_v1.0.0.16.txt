@@ -1,0 +1,20 @@
+Codex Bullet Chart v1.0.0.16 - resubmission after the 03/08/2026 review.
+(Exact text pasted into Partner Center 04/08/2026. Notes are NOT retained
+across resubmissions and the field caps at 2500 characters.)
+
+Source code repository: https://github.com/Nexus-Codex-pbi/codex-bullet-chart
+No test account, licence key or in-app purchase required. All functionality is in the attached sample .pbix.
+
+REASON FOR RESUBMISSION
+The previous submission was returned because the sample .pbix did not embed the matching version of the visual. This was a packaging error on our side, not a defect in the visual: the .pbix and .pbiviz were uploaded in quick succession and only one of the pair was retained, leaving a stale file against the new one.
+
+WHAT CHANGED
+Nothing in the visual. The code, capabilities and version (1.0.0.16) are unchanged from the previous submission. Both files have been re-uploaded individually and verified, and the sample .pbix now embeds exactly the v1.0.0.16 build submitted alongside it.
+
+VERIFICATION
+The embedded visual version inside CodexBulletChart_Sample.pbix has been checked against the submitted .pbiviz package and matches (guid codexBulletChartA1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6, version 1.0.0.16). We have added an automated pre-submission check across our visual suite so a sample and its package can no longer be submitted out of step.
+
+SAMPLE
+The sample report demonstrates the bullet chart with actual, target and comparative range bands, category labels, tooltips on hover, cross-filtering on click and multi-select with Ctrl-click.
+
+supportsHighlight is declared false deliberately: declaring it true without honouring the highlight array in the renderer is itself a 1180.2.2 finding. It will be set when the renderer genuinely dims un-highlighted marks.
