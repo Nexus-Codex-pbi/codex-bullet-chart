@@ -1411,11 +1411,19 @@ export class Visual implements IVisual {
         ranges: VisualFormattingSettingsModel["qualitativeRanges"],
         row: BulletRow
     ): string {
+        // High contrast outranks EVERYTHING, including the fx helper's early
+        // return (NEXUS cycle-03 §3). ColorHelper.getColorForMeasure() called
+        // without a themeColorName returns getThemeColor("background") under
+        // high contrast — i.e. BLACK on a black host — and because that
+        // differs from the configured constant it satisfied the
+        // `fxResolved !== set` early return below and shipped straight to the
+        // DOM: the full-scale value read black on black in both orientations.
+        // The HC branch has to come first; it was previously one line late.
+        if (this.isHighContrast) return this.colorPalette.foreground.value;
         const set = bullet.valueColor.value.value;
         const instanceObjects = this.categoricalCategories?.objects?.[row.originalIndex];
         const fxResolved = this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? set;
         if (fxResolved !== set) return fxResolved;
-        if (this.isHighContrast) return this.colorPalette.foreground.value;
         if (set !== VALUE_COLOR_DEFAULT) return set;
         // Untouched default: contrast against the SURFACE the label sits
         // on — the qualitative zone blended over the base at the current
