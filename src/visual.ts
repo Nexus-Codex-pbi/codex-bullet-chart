@@ -486,10 +486,9 @@ export class Visual implements IVisual {
         axis: VisualFormattingSettingsModel["axisSettings"],
         titleFmt: VisualFormattingSettingsModel["titleSettings"]
     ): void {
-        const viewportWidth = options.viewport.width;
-        const viewportHeight = options.viewport.height;
-        const rowHeight = clamp(bullet.rowHeight.value, 20, 100);
-        const barHeight = clamp(bullet.barHeight.value, 6, rowHeight - 4);
+        const hostWidth = safeSize(options.viewport.width);
+        const requestedRowHeight = clamp(bullet.rowHeight.value, 20, 100);
+        const barHeight = clamp(bullet.barHeight.value, 6, requestedRowHeight - 4);
         const showLabels = labels.show.value;
         const labelFontSize = clamp(labels.fontSize.value, 8, 24);
         const labelFontFamily = labels.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
@@ -506,7 +505,9 @@ export class Visual implements IVisual {
         // minimum (settings.ts:51), so a negative entry reached the SVG as a
         // negative <rect> width/height: three rejected rects per render
         // (NEXUS cycle-03 §5). Never below one device pixel.
-        const targetThickness = Math.max(1, safeSize(bullet.targetWidth.value));
+        const rowHeight = Math.max(requestedRowHeight, barHeight * 1.6 + 8,
+            showLabels ? labelFontSize + 8 : 0, showValue ? valueFontSize + 8 : 0);
+        const targetThickness = Math.min(barHeight, Math.max(1, safeSize(bullet.targetWidth.value)));
         const showAxis = axis.show.value;
         const axisFontSize = clamp(axis.fontSize.value, 6, 18);
         const axisFontFamily = axis.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
@@ -520,7 +521,7 @@ export class Visual implements IVisual {
         // visual rebuilds its SVG from scratch every render (no persistent
         // title element), so the title text is appended fresh below.
         const showTitle = !!titleFmt.showTitle.value && !!titleFmt.titleText.value;
-        const titleFontSize = titleFmt.titleFontSize.value || 14;
+        const titleFontSize = clamp(titleFmt.titleFontSize.value || 14, 6, 48);
         const titleH = showTitle ? titleFontSize + 12 : 0;
         const axisColor = this.textColorFor(axis.color.value.value, AXIS_COLOR_DEFAULT);
         const axisLabelText = axis.axisLabel.value || "";
@@ -528,19 +529,30 @@ export class Visual implements IVisual {
         const showGridlines = axis.gridlines.value;
         const gridlineColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.gridlineColor.value.value;
         const gridlineWidth = clamp(axis.gridlineWidth.value, 1, 4);
-        const axisAreaHeight = showAxis ? axisFontSize + 12 + (axisLabelText ? axisLabelFontSize + 4 : 0) : 0;
-
-        // Calculate label width — use 0.65em average char width + generous padding
-        const labelWidth = showLabels
-            ? Math.min(
-                Math.max(...rows.map(r => r.category.length)) * (labelFontSize * 0.65) + 16,
-                viewportWidth * 0.4
-            )
-            : 0;
-
-        const valueWidth = showValue ? 70 : 0;
-        const chartWidth = Math.max(viewportWidth - labelWidth - valueWidth - 8, 40);
-        const totalHeight = rows.length * rowHeight + axisAreaHeight + titleH;
+        const axisAreaHeight = showAxis ? axisFontSize + 16 + (axisLabelText ? axisLabelFontSize + 4 : 0) : 0;
+        const globalMax = Math.max(...rows.map(r => r.maximum));
+        const tickCount = Math.round(clamp(axis.tickCount.value, 2, 10));
+        const tickWidth = showAxis ? this.measureMaxTextWidth(
+            Array.from({ length: tickCount + 1 }, (_, i) => this.formatDisplayValue(globalMax * i / tickCount, bullet.valueFormat.value.value as string)),
+            { family: axisFontFamily, size: axisFontSize, weight: axisWeight, style: axisStyle }
+        ) : 0;
+        const categoryAxisMargin = axis.yAxisTitle.value ? axisFontSize + 14 : 0;
+        const labelWidth = Math.max(categoryAxisMargin + (showLabels ? this.measureMaxTextWidth(
+            rows.map(row => row.category),
+            { family: labelFontFamily, size: labelFontSize, weight: labelWeight, style: labelStyle }
+        ) + 16 : 0), tickWidth / 2 + 4);
+        const valueWidth = Math.max(showValue ? this.measureValueWidth(rows, valueFontSize) + targetThickness / 2 + 16 : 0,
+            tickWidth / 2 + 8);
+        const titleWidth = showTitle ? this.measureMaxTextWidth([String(titleFmt.titleText.value)], {
+            family: titleFmt.titleFontFamily.value || "Segoe UI, sans-serif", size: titleFontSize,
+            weight: this.weightFor(titleFmt.titleBold.value, "400"), style: titleFmt.titleItalic.value ? "italic" : "normal"
+        }) + 16 : 0;
+        // Preserve readable text and scale geometry on a scrollable canvas.
+        const minChartWidth = Math.max(40, showAxis ? (tickWidth + 8) * tickCount : 0);
+        const viewportWidth = Math.max(hostWidth, labelWidth + valueWidth + minChartWidth + 8, titleWidth);
+        const chartWidth = viewportWidth - labelWidth - valueWidth - 8;
+        const legacyTitleHeight = axis.showAxisTitles.value && axis.xAxisTitle.value ? axisFontSize + 10 : 0;
+        const totalHeight = rows.length * rowHeight + axisAreaHeight + titleH + legacyTitleHeight + 4;
 
         // Centre the visual horizontally
         const usedWidth = labelWidth + chartWidth + valueWidth + 8;
@@ -549,7 +561,7 @@ export class Visual implements IVisual {
         const svg = select(this.svgContainer)
             .append("svg")
             .attr("width", viewportWidth)
-            .attr("height", Math.min(totalHeight, viewportHeight))
+            .attr("height", totalHeight)
             .attr("class", "bullet-svg");
 
         // v2 measure-bar bevel gradients (one def per distinct base colour).
@@ -574,13 +586,7 @@ export class Visual implements IVisual {
                 .text(String(titleFmt.titleText.value));
         }
 
-        // Scrollable if needed
-        if (totalHeight > viewportHeight) {
-            this.svgContainer.style.overflowY = "auto";
-            svg.attr("height", totalHeight);
-        } else {
-            this.svgContainer.style.overflowY = "hidden";
-        }
+        this.svgContainer.style.overflow = "auto";
 
         // ─── Domain reconciliation with the common axis (NEXUS cycle-03 §2) ──
         // The axis below draws ONE scale, 0..max(all row maximums). Rows were
@@ -591,8 +597,6 @@ export class Visual implements IVisual {
         // shown the rows MUST share its domain. Axis `show` ships FALSE
         // (settings.ts), so a saved report that never turned the axis on keeps
         // its per-row "% of its own maximum" reading unchanged.
-        const globalMax = Math.max(...rows.map(r => r.maximum));
-
         rows.forEach((row, idx) => {
             const yCenter = titleH + idx * rowHeight + rowHeight / 2;
             const yTop = yCenter - barHeight / 2;
@@ -681,9 +685,9 @@ export class Visual implements IVisual {
             const quantised = bullet.quantisedMode?.value ?? false;
             const barWidth = xScale(row.actual);
             if (quantised) {
-                const n = clamp(bullet.quantisedBlocks?.value ?? 20, 4, 60);
-                const gap = 3;
-                const blockW = Math.max((chartWidth - (n - 1) * gap) / n, 1);
+                const n = Math.round(clamp(bullet.quantisedBlocks?.value ?? 20, 4, 60));
+                const gap = Math.min(3, chartWidth / (2 * n));
+                const blockW = (chartWidth - (n - 1) * gap) / n;
                 const lit = Math.round(clamp(row.actual / (showAxis ? globalMax : row.maximum), 0, 1) * n);
                 const blocksG = g.append("g").attr("class", "bullet-measure-blocks");
                 for (let bi = 0; bi < n; bi++) {
@@ -774,7 +778,7 @@ export class Visual implements IVisual {
                 if (row.target !== null) {
                     const tX = xScale(row.target);
                     const tHalf = targetThickness / 2 + 4;
-                    const estW = (hcGlyph + formatted).length * valueFontSize * 0.62;
+                    const estW = this.measureValueWidth([row], valueFontSize);
                     if (tX + tHalf > valueLabelX && tX - tHalf < valueLabelX + estW) {
                         valueLabelX = tX + tHalf + 2;
                     }
@@ -821,7 +825,6 @@ export class Visual implements IVisual {
 
         // Axis ticks below the chart + gridlines
         if (showAxis && rows.length > 0) {
-            const tickCount = clamp(axis.tickCount.value, 2, 10);
             // Same globalMax the row scales above now share (NEXUS §2) — it
             // was re-derived here, which is what let the two diverge.
             const axisScale = scaleLinear().domain([0, safeDomainMax(globalMax)]).range([0, chartWidth]);
@@ -902,7 +905,7 @@ export class Visual implements IVisual {
             const titleColor = this.isHighContrast ? this.colorPalette.foreground.value : axisColor;
             const svgEl = svg;
             if (xAxisTitleText) {
-                const titleY = Math.min(totalHeight, viewportHeight) - 4;
+                const titleY = totalHeight - 4;
                 svgEl.append("text")
                     .attr("x", xOffset + labelWidth + chartWidth / 2)
                     .attr("y", titleY)
@@ -915,7 +918,7 @@ export class Visual implements IVisual {
                     .text(xAxisTitleText);
             }
             if (yAxisTitleText) {
-                const chartMidY = (rows.length * rowHeight) / 2;
+                const chartMidY = titleH + (rows.length * rowHeight) / 2;
                 svgEl.append("text")
                     .attr("x", -chartMidY)
                     .attr("y", xOffset + 12)
@@ -941,8 +944,8 @@ export class Visual implements IVisual {
         axis: VisualFormattingSettingsModel["axisSettings"],
         titleFmt: VisualFormattingSettingsModel["titleSettings"]
     ): void {
-        const viewportWidth = options.viewport.width;
-        const viewportHeight = options.viewport.height;
+        const hostWidth = safeSize(options.viewport.width);
+        const hostHeight = safeSize(options.viewport.height);
         const showLabels = labels.show.value;
         const labelFontSize = clamp(labels.fontSize.value, 8, 24);
         const labelFontFamily = labels.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
@@ -960,7 +963,7 @@ export class Visual implements IVisual {
         // minimum (settings.ts:51), so a negative entry reached the SVG as a
         // negative <rect> width/height: three rejected rects per render
         // (NEXUS cycle-03 §5). Never below one device pixel.
-        const targetThickness = Math.max(1, safeSize(bullet.targetWidth.value));
+        const targetThickness = Math.min(barWidth, Math.max(1, safeSize(bullet.targetWidth.value)));
         const showAxis = axis.show.value;
         const axisFontSize = clamp(axis.fontSize.value, 6, 18);
         const axisFontFamily = axis.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
@@ -973,17 +976,27 @@ export class Visual implements IVisual {
         const showGridlines = axis.gridlines.value;
         const gridlineColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.gridlineColor.value.value;
         const gridlineWidth = clamp(axis.gridlineWidth.value, 1, 4);
-        const axisAreaWidth = showAxis ? axisFontSize * 4 + 8 + (axisLabelText ? axisLabelFontSize + 4 : 0) : 0;
+        const globalMax = Math.max(...rows.map(r => r.maximum));
+        const tickCount = Math.round(clamp(axis.tickCount.value, 2, 10));
+        const tickWidth = showAxis ? this.measureMaxTextWidth(
+            Array.from({ length: tickCount + 1 }, (_, i) => this.formatDisplayValue(globalMax * i / tickCount, bullet.valueFormat.value.value as string)),
+            { family: axisFontFamily, size: axisFontSize, weight: axisWeight, style: axisStyle }
+        ) : 0;
+        const categoryAxisMargin = axis.yAxisTitle.value ? axisFontSize + 14 : 0;
+        const axisAreaWidth = categoryAxisMargin + (showAxis ? tickWidth + 16 + (axisLabelText ? axisLabelFontSize + 8 : 0) : 0);
 
         // ─── Title (iframe-internal, Policy 1180.2.5) — reserves vertical
         // space above the chart (see renderHorizontal for the full note).
         const showTitle = !!titleFmt.showTitle.value && !!titleFmt.titleText.value;
-        const titleFontSize = titleFmt.titleFontSize.value || 14;
+        const titleFontSize = clamp(titleFmt.titleFontSize.value || 14, 6, 48);
         const titleH = showTitle ? titleFontSize + 12 : 0;
 
         const labelAreaHeight = showLabels ? labelFontSize + 12 : 0;
-        const valueAreaHeight = showValue ? valueFontSize + 8 : 0;
-        const chartHeight = Math.max(viewportHeight - labelAreaHeight - valueAreaHeight - titleH - 8, 40);
+        const valueAreaHeight = showValue ? valueFontSize + 10 + targetThickness / 2 : targetThickness / 2 + 4;
+        const legacyTitleHeight = axis.showAxisTitles.value && axis.xAxisTitle.value ? axisFontSize + 14 : 0;
+        const minChartHeight = Math.max(40, showAxis ? (axisFontSize + 8) * tickCount : 0);
+        const viewportHeight = Math.max(hostHeight, labelAreaHeight + valueAreaHeight + titleH + legacyTitleHeight + 8 + minChartHeight);
+        const chartHeight = viewportHeight - labelAreaHeight - valueAreaHeight - titleH - legacyTitleHeight - 8;
         // ─── Column pitch accounts for the MEASURED label (NEXUS cycle-03 §7) ──
         // Category labels are centred on their column, so the column pitch is
         // the only thing keeping adjacent labels apart — and the pitch was
@@ -1000,8 +1013,14 @@ export class Visual implements IVisual {
                 weight: labelWeight, style: labelStyle,
             }) + LABEL_COLUMN_GAP
             : 0;
-        const colWidth = Math.max(clamp(bullet.rowHeight.value, 20, 100), labelPitch);
-        const totalWidth = rows.length * colWidth + axisAreaWidth;
+        const valuePitch = showValue ? this.measureValueWidth(rows, valueFontSize) + LABEL_COLUMN_GAP : 0;
+        const colWidth = Math.max(clamp(bullet.rowHeight.value, 20, 100), labelPitch, valuePitch, barWidth * 1.6 + 14);
+        const totalWidth = rows.length * colWidth + axisAreaWidth + 4;
+        const titleWidth = showTitle ? this.measureMaxTextWidth([String(titleFmt.titleText.value)], {
+            family: titleFmt.titleFontFamily.value || "Segoe UI, sans-serif", size: titleFontSize,
+            weight: this.weightFor(titleFmt.titleBold.value, "400"), style: titleFmt.titleItalic.value ? "italic" : "normal"
+        }) + 16 : 0;
+        const viewportWidth = Math.max(hostWidth, totalWidth, titleWidth);
 
         // Centre horizontally when content is narrower than viewport
         const xOffset = totalWidth < viewportWidth ? (viewportWidth - totalWidth) / 2 + axisAreaWidth : axisAreaWidth;
@@ -1016,12 +1035,7 @@ export class Visual implements IVisual {
         const defs = svg.append("defs") as unknown as Selection<SVGDefsElement, unknown, null, undefined>;
         const gradCache = new Map<string, string>();
 
-        if (totalWidth > viewportWidth) {
-            this.svgContainer.style.overflowX = "auto";
-            svg.attr("width", totalWidth);
-        } else {
-            this.svgContainer.style.overflowX = "hidden";
-        }
+        this.svgContainer.style.overflow = "auto";
 
         if (showTitle) {
             const tAlign = textAlignFor(String(titleFmt.titleAlign?.value || "left"));
@@ -1044,8 +1058,6 @@ export class Visual implements IVisual {
         // Domain reconciliation with the common axis — see renderHorizontal's
         // note (NEXUS cycle-03 §2). Vertically the same mismatch produced two
         // equal 144.5px columns for 50/100 and 100/200 beside one 0-200 axis.
-        const globalMax = Math.max(...rows.map(r => r.maximum));
-
         rows.forEach((row, idx) => {
             const xCenter = xOffset + idx * colWidth + colWidth / 2;
             const xLeft = xCenter - barWidth / 2;
@@ -1125,9 +1137,9 @@ export class Visual implements IVisual {
             const barTopY = yScale(row.actual);
             const barHeightPx = yScale(0) - barTopY;
             if (quantised) {
-                const n = clamp(bullet.quantisedBlocks?.value ?? 20, 4, 60);
-                const gap = 3;
-                const blockH = Math.max((chartHeight - (n - 1) * gap) / n, 1);
+                const n = Math.round(clamp(bullet.quantisedBlocks?.value ?? 20, 4, 60));
+                const gap = Math.min(3, chartHeight / (2 * n));
+                const blockH = (chartHeight - (n - 1) * gap) / n;
                 const lit = Math.round(clamp(row.actual / (showAxis ? globalMax : row.maximum), 0, 1) * n);
                 const blocksG = g.append("g").attr("class", "bullet-measure-blocks");
                 for (let bi = 0; bi < n; bi++) {
@@ -1188,7 +1200,7 @@ export class Visual implements IVisual {
             if (showLabels) {
                 svg.append("text")
                     .attr("x", xCenter)
-                    .attr("y", viewportHeight - 4)
+                    .attr("y", viewportHeight - legacyTitleHeight - 4)
                     .attr("text-anchor", "middle")
                     .attr("class", "bullet-label")
                     .attr("font-family", labelFontFamily)
@@ -1263,7 +1275,6 @@ export class Visual implements IVisual {
 
         // Axis ticks on the left side + gridlines
         if (showAxis && rows.length > 0) {
-            const tickCount = clamp(axis.tickCount.value, 2, 10);
             // Same globalMax the row scales above now share (NEXUS §2).
             const yScale = scaleLinear()
                 .domain([0, safeDomainMax(globalMax)])
@@ -1321,7 +1332,7 @@ export class Visual implements IVisual {
                 const midY = (yScale(0) + yScale(globalMax)) / 2;
                 axisG.append("text")
                     .attr("x", -midY)
-                    .attr("y", axisX - axisFontSize * 4 - 10)
+                    .attr("y", categoryAxisMargin + axisLabelFontSize)
                     .attr("text-anchor", "middle")
                     .attr("transform", "rotate(-90)")
                     .attr("class", "bullet-axis-title")
@@ -1356,7 +1367,7 @@ export class Visual implements IVisual {
                     .text(xAxisTitleText);
             }
             if (yAxisTitleText) {
-                const midY = (valueAreaHeight + chartHeight + valueAreaHeight) / 2;
+                const midY = titleH + (valueAreaHeight + chartHeight + valueAreaHeight) / 2;
                 svgEl.append("text")
                     .attr("x", -midY)
                     .attr("y", 12)
@@ -1726,6 +1737,15 @@ export class Visual implements IVisual {
      *  markup string, so the certification surface is unchanged; the probe
      *  is removed before anything else is drawn. Falls back to the old
      *  estimate if getComputedTextLength is unavailable (jsdom-style hosts). */
+    private measureValueWidth(rows: BulletRow[], size: number): number {
+        const format = this.formattingSettings.bulletSettings.valueFormat.value.value as string;
+        const texts = rows.map(row => {
+            const glyph = this.hc.active && row.target !== null ? statusGlyph(band(row.actual, row.target)) + " " : "";
+            return glyph + this.formatDisplayValue(row.actual, format);
+        });
+        return this.measureMaxTextWidth(texts, { family: CODEX_TOKENS.fontFamily, size, weight: "700", style: "normal" });
+    }
+
     private measureMaxTextWidth(
         texts: string[],
         font: { family: string; size: number; weight: string; style: string }
@@ -1742,6 +1762,7 @@ export class Visual implements IVisual {
         probe.setAttribute("font-size", font.size + "px");
         probe.setAttribute("font-weight", font.weight);
         probe.setAttribute("font-style", font.style);
+        probe.style.setProperty("font-feature-settings", TABULAR_NUMS);
         probeSvg.appendChild(probe);
         this.svgContainer.appendChild(probeSvg);
         let widest = 0;
