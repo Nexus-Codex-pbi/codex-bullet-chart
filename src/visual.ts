@@ -1411,8 +1411,20 @@ export class Visual implements IVisual {
     private renderEmpty(): void {
         // Muted card signature on the landing/empty state (§4) — still
         // honours the Corner Accents show toggle.
+        //
+        // High contrast outranks the muted treatment (NEXUS cycle-03,
+        // "Additional pre-existing gaps" 1). The empty state took the muted
+        // path unconditionally, so on a black high-contrast host both
+        // brackets painted rgb(143,138,184) at opacity 0.4 and the guidance
+        // text kept its brand ink — the one screen a user sees when the
+        // visual has no data was the one screen that ignored their
+        // accessibility setting. Under HC the system foreground wins at full
+        // opacity, with no glow; every other host is untouched.
+        const hcEmpty = this.isHighContrast;
         if (this.formattingSettings && !this.formattingSettings.cardSignature.show.value) {
             this.cornerSignature?.elements.forEach((el) => { el.style.display = "none"; });
+        } else if (hcEmpty) {
+            this.cornerSignature?.update(this.colorPalette.foreground.value, { muted: false, glowMix: 0 });
         } else {
             this.cornerSignature?.update("#8f8ab8", { muted: true });
         }
@@ -1433,6 +1445,18 @@ export class Visual implements IVisual {
         strong.textContent = this.localizationManager.getDisplayName("Empty_Actual");
         text.appendChild(strong);
         text.appendChild(document.createTextNode(this.localizationManager.getDisplayName("Empty_ToRender")));
+
+        // The empty-state ink lives in visual.less (.bullet-empty colour and
+        // its <strong> brand colour) where the host palette cannot reach it,
+        // so HC is applied inline here rather than by adding a colour to the
+        // stylesheet that the palette still could not override.
+        if (hcEmpty) {
+            const foreground = this.colorPalette.foreground.value;
+            empty.style.color = foreground;
+            icon.style.color = foreground;
+            text.style.color = foreground;
+            strong.style.color = foreground;
+        }
 
         empty.appendChild(icon);
         empty.appendChild(text);
