@@ -151,6 +151,12 @@ export class Visual implements IVisual {
     private licenseGate: LicenseGate;
 
     private lastUpdateOptions: VisualUpdateOptions | null = null;
+    private destroyed = false;
+    private readonly onContextMenu = (e: MouseEvent): void => {
+        if (this.destroyed) return;
+        this.selectionManager.showContextMenu({}, { x: e.clientX, y: e.clientY });
+        e.preventDefault();
+    };
 
 
     constructor(options: VisualConstructorOptions) {
@@ -175,13 +181,7 @@ export class Visual implements IVisual {
         this.isHighContrast = this.colorPalette.isHighContrast;
 
         // Context menu on right-click
-        this.target.addEventListener("contextmenu", (e: MouseEvent) => {
-            this.selectionManager.showContextMenu(
-                {},
-                { x: e.clientX, y: e.clientY }
-            );
-            e.preventDefault();
-        });
+        this.target.addEventListener("contextmenu", this.onContextMenu);
 
         // Build DOM skeleton
         this.container = document.createElement("div");
@@ -209,6 +209,7 @@ export class Visual implements IVisual {
     }
 
     public update(options: VisualUpdateOptions): void {
+        if (this.destroyed) return;
         this.eventService.renderingStarted(options);
         this.lastUpdateOptions = options;
 
@@ -1730,14 +1731,24 @@ export class Visual implements IVisual {
     }
 
     public destroy(): void {
+        if (this.destroyed) return;
+        this.destroyed = true;
         // Drop the in-flight licence check FIRST: its redraw callback replays
         // update() against a torn-down target otherwise (NEXUS lifecycle finding).
         this.licenseGate.dispose();
+        this.lastUpdateOptions = null;
+        this.target.removeEventListener("contextmenu", this.onContextMenu);
         this.cornerSignature?.destroy();
         this.cornerSignature = null;
         while (this.svgContainer.firstChild) {
             this.svgContainer.removeChild(this.svgContainer.firstChild);
         }
+        this.container.remove();
+        this.rowSelectionIds = [];
+        this.categoricalCategories = undefined;
+        this.barColorHelper = null;
+        this.valueColorHelper = null;
+        this.lastDataSignature = null;
     }
 
     public getFormattingModel(): powerbi.visuals.FormattingModel {
