@@ -376,8 +376,8 @@ export class Visual implements IVisual {
                     // Rows without sort order go to the end
                     if (a.sortOrder === null && b.sortOrder === null) return 0;
                     if (a.sortOrder === null) return 1;
-                    if (b.sortOrder === null) return 1;
-                    return a.sortOrder - b.sortOrder;
+                    if (b.sortOrder === null) return -1;
+                    return a.sortOrder - b.sortOrder || a.originalIndex - b.originalIndex;
                 });
             }
 
