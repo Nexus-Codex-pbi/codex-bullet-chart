@@ -21,7 +21,7 @@ import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
-import { CODEX_TOKENS, formatValue, clamp, safeFractionDigits } from "./utils";
+import { CODEX_TOKENS, formatValue, clamp, safeFractionDigits, safeNumber } from "./utils";
 import { toRgba, compositeOver, contrastInk, contrastRatio } from "./shared/colorHelpers";
 import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
@@ -339,32 +339,32 @@ export class Visual implements IVisual {
             const rows: BulletRow[] = [];
 
             for (let i = 0; i < rowCount; i++) {
-                const actualVal = actualCol.values[i] as number;
-                if (actualVal == null || isNaN(actualVal)) continue;
+                const actualVal = safeNumber(actualCol.values[i]);
+                if (actualVal === null) continue;
 
-                const targetVal = targetCol ? targetCol.values[i] as number : null;
-                const maxVal = maximumCol ? maximumCol.values[i] as number : null;
-                const sortOrderVal = sortOrderCol ? sortOrderCol.values[i] as number : null;
-                const categoryLabel = categories ? String(categories.values[i]) : `Row ${i + 1}`;
+                const targetVal = safeNumber(targetCol?.values[i]);
+                const maxVal = safeNumber(maximumCol?.values[i]);
+                const sortOrderVal = safeNumber(sortOrderCol?.values[i]);
+                const categoryLabel = categories ? String(categories.values[i] ?? "") : `Row ${i + 1}`;
 
                 // Auto-calculate maximum if not provided. The auto branch is
                 // itself degenerate when every input is 0 or negative
                 // (max(0, 0) * 1.2 === 0) — safeDomainMax() keeps the domain
                 // usable so the scale can never collapse to its midpoint
                 // (NEXUS cycle-03 §1).
-                const computedMax = maxVal != null && !isNaN(maxVal) && maxVal > 0
+                const computedMax = maxVal !== null && maxVal > 0
                     ? maxVal
                     : safeDomainMax(Math.max(
                         actualVal,
-                        targetVal != null && !isNaN(targetVal) ? targetVal : 0
+                        targetVal ?? 0
                     ) * 1.2);
 
                 rows.push({
                     category: categoryLabel,
                     actual: actualVal,
-                    target: targetVal != null && !isNaN(targetVal) ? targetVal : null,
+                    target: targetVal,
                     maximum: computedMax,
-                    sortOrder: sortOrderVal != null && !isNaN(sortOrderVal) ? sortOrderVal : null,
+                    sortOrder: sortOrderVal,
                     originalIndex: i
                 });
             }

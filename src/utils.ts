@@ -27,11 +27,9 @@ export function clamp(value: number, min: number, max: number): number {
     return Math.min(Math.max(value, min), max);
 }
 
-/** Safely convert to number, returning null for NaN/undefined/null */
-export function safeNumber(v: any): number | null {
-    if (v === null || v === undefined) return null;
-    const n = Number(v);
-    return isNaN(n) ? null : n;
+/** Numeric role values must not coerce blanks, booleans or text into measures. */
+export function safeNumber(v: unknown): number | null {
+    return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
 /** Fraction-digit count that Number.prototype.toFixed will accept (0-100).

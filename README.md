@@ -23,11 +23,11 @@ A bullet chart visual that displays a primary measure (actual) compared to a tar
 |------|--------------|------|-----------|-----------|-------------|
 | category | Category | Grouping | No (max 1) | Text or Grouping | Row label (e.g. Beat name or Battery code) |
 | actual | Actual | Measure | Yes (max 1) | Numeric | The primary bar value |
-| target | Target | Measure | Yes (max 1) | Numeric | Target marker line |
+| target | Target | Measure | No (max 1) | Numeric | Target marker line |
 | maximum | Maximum | Measure | No (max 1) | Numeric | Full scale maximum (optional, auto-calculated if omitted) |
 | sortOrder | Sort Order | Measure | No (max 1) | Numeric | Custom sort order (ascending). If omitted, rows keep their original order. |
 
-Note: Actual and Target are required for meaningful display. Each role can have at most one field bound.
+Actual is required. Target is optional; without it, no target marker or variance is shown. Each role can have at most one field bound.
 
 ## Formatting Options
 The visual provides the following format pane cards:
@@ -81,7 +81,7 @@ The visual provides the following format pane cards:
 3. Bind data to the data roles:
    - Category: Required for row labels (text or grouping field)
    - Actual: Required numeric measure for the primary value
-   - Target: Required numeric measure for the target line
+   - Target: Optional numeric measure for the target line
    - Optional: Maximum (numeric field to set the scale; if omitted, scale is auto-calculated)
    - Optional: Sort Order (numeric field to control row order)
 4. Use the format pane to adjust appearance:
@@ -94,10 +94,12 @@ The visual provides the following format pane cards:
    - Hover to see a tooltip with category, actual, target, and maximum
 
 ## Limitations
-- The visual expects numeric values for Actual, Target, and Maximum. Non-numeric values are treated as zero.
-- If Actual or Target is missing or non-numeric, the row is not displayed.
+- Actual, Target, Maximum and Sort Order accept finite numeric values, without coercing text or booleans.
+- If Actual is missing or non-numeric, the row is not displayed. Zero remains a real zero.
+- If Target is missing or non-numeric, the row remains visible without a target marker or variance.
+- Blank category values remain blank; text categories such as `0012` retain their text.
 - Maximum, if provided, must be numeric and greater than zero; otherwise, auto-calculation is used.
-- Sort Order, if bound, must be numeric; non-numeric values are treated as zero.
+- Sort Order, if bound, must be numeric; missing or non-numeric keys follow ranked rows.
 - Each data role accepts only one field.
 - The visual uses a data reduction algorithm (top 30,000 rows) which may limit the number of rows displayed.
 - Qualitative range thresholds must be between 0 and 100 (representing percentage of maximum).
