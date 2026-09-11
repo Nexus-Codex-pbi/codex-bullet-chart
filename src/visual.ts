@@ -22,7 +22,7 @@ import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { CODEX_TOKENS, formatValue, clamp, safeFractionDigits } from "./utils";
-import { toRgba, compositeOver, contrastInk } from "./shared/colorHelpers";
+import { toRgba, compositeOver, contrastInk, contrastRatio } from "./shared/colorHelpers";
 import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
 import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
@@ -197,10 +197,11 @@ export class Visual implements IVisual {
         // svgContainer, so they stay the container's LAST children (paint
         // above the chart) — svgContainer's own children are what gets
         // cleared per render, never these siblings. Re-tinted per update().
-        this.cornerSignature = makeCornerBrackets(this.container, "#8f8ab8", {
+        this.cornerSignature = makeCornerBrackets(this.container, this.isHighContrast ? this.colorPalette.foreground.value : "#8f8ab8", {
             variant: "cornerBracket",
             mirror: true,
-            muted: true,
+            muted: !this.isHighContrast,
+            glowMix: 0,
         });
 
         // Allow deselection
@@ -266,31 +267,11 @@ export class Visual implements IVisual {
             // via the host palette instead of assuming white (2026-07-11:
             // dark report pages resolved "light", leaving default text
             // grey-on-black).
-            // Theme-source ladder: a visible own background governs; a
-            // USER-SET hex governs even when fully transparent (explicit
-            // theme hint — matching a black page the palette can't see,
-            // Neil 2026-07-11); only the untouched default falls through
-            // to the report theme's palette background.
-            // NEXUS cycle-03 §4: the ladder keyed the theme off the RAW fill
-            // hex while that fill is painted WITH TRANSPARENCY, so black at
-            // 95% transparent — rgba(0,0,0,0.05), visually a white card —
-            // resolved "dark" and picked pale rgb(232,230,255) category text
-            // on near-white. The surface a reader actually sees is the fill
-            // COMPOSITED over whatever is behind it (the report/theme
-            // background the host reports, since the visual paints none).
-            // compositeOver() at transparency 0 returns the fill unchanged,
-            // so an opaque background resolves exactly as before; only
-            // genuinely translucent ones move. Transparency 100 paints
-            // nothing at all, so the ladder's existing branch stands: a
-            // USER-SET hex is still honoured as an explicit theme hint
-            // (Neil 2026-07-11 — matching a black page the palette cannot
-            // see), and the untouched default still falls through to the
-            // host palette.
-            const bgHexIsUserSet = outerBgHex.toLowerCase() !== "#ffffff";
+            // Transparent fills do not contribute to the visible surface.
             const behindHex = this.colorPalette.background?.value ?? "#ffffff";
-            const themeSourceHex = outerBgTransparencyPct < 100
-                ? compositeOver(outerBgHex, outerBgTransparencyPct, behindHex)
-                : (bgHexIsUserSet ? outerBgHex : (this.colorPalette.background?.value ?? outerBgHex));
+            const themeSourceHex = this.isHighContrast
+                ? behindHex
+                : compositeOver(outerBgHex, outerBgTransparencyPct, behindHex);
             this.theme = themeFor(themeSourceHex);
             this.themeBaseHex = themeSourceHex;
             this.hc = applyHighContrast(this.colorPalette, {
@@ -787,7 +768,7 @@ export class Visual implements IVisual {
                         valueLabelX = tX + tHalf + 2;
                     }
                 }
-                g.append("text")
+                const valueText = g.append("text")
                     .attr("x", valueLabelX)
                     .attr("y", yCenter)
                     .attr("dy", "0.35em")
@@ -796,8 +777,9 @@ export class Visual implements IVisual {
                     .attr("font-size", valueFontSize + "px")
                     .attr("font-weight", "700")
                     .style("font-feature-settings", TABULAR_NUMS)
-                    .attr("fill", this.resolveValueColor(bullet, ranges, row))
+                    .attr("fill", this.resolveValueColor(bullet, row))
                     .text(hcGlyph + formatted);
+                this.backValueLabel(valueText.node());
             }
 
             // Invisible hit rect for tooltip and cross-filtering
@@ -1239,7 +1221,7 @@ export class Visual implements IVisual {
                         valueLabelY = Math.max(tY - tHalf - 2, titleH + valueFontSize);
                     }
                 }
-                g.append("text")
+                const valueText = g.append("text")
                     .attr("x", xCenter)
                     .attr("y", valueLabelY)
                     .attr("text-anchor", "middle")
@@ -1247,8 +1229,9 @@ export class Visual implements IVisual {
                     .attr("font-size", valueFontSize + "px")
                     .attr("font-weight", "700")
                     .style("font-feature-settings", TABULAR_NUMS)
-                    .attr("fill", this.resolveValueColor(bullet, ranges, row))
+                    .attr("fill", this.resolveValueColor(bullet, row))
                     .text(hcGlyph + formatted);
+                this.backValueLabel(valueText.node());
             }
 
             // Invisible hit rect for tooltip and cross-filtering
@@ -1450,13 +1433,11 @@ export class Visual implements IVisual {
         // its <strong> brand colour) where the host palette cannot reach it,
         // so HC is applied inline here rather than by adding a colour to the
         // stylesheet that the palette still could not override.
-        if (hcEmpty) {
-            const foreground = this.colorPalette.foreground.value;
-            empty.style.color = foreground;
-            icon.style.color = foreground;
-            text.style.color = foreground;
-            strong.style.color = foreground;
-        }
+        const foreground = hcEmpty ? this.colorPalette.foreground.value : this.adaptiveInk(this.themeBaseHex);
+        empty.style.color = foreground;
+        icon.style.color = foreground;
+        text.style.color = foreground;
+        strong.style.color = foreground;
 
         empty.appendChild(icon);
         empty.appendChild(text);
@@ -1513,7 +1494,28 @@ export class Visual implements IVisual {
         // Reproduces the old pick exactly at the extremes — #ffffff -> the
         // shipped default, #07071a -> the dark token — and only differs where
         // the bucket was a coin-flip (NEXUS cycle-03 §4).
-        return contrastInk(this.themeBaseHex, shippedDefault, surfaceTokens("dark").text);
+        return this.adaptiveInk(this.themeBaseHex, shippedDefault);
+    }
+
+    private adaptiveInk(surface: string, darkInk = surfaceTokens("light").text): string {
+        const ink = contrastInk(surface, darkInk, surfaceTokens("dark").text);
+        return contrastRatio(ink, surface) >= 4.5 ? ink : contrastInk(surface, "#000000", "#ffffff");
+    }
+
+    private backValueLabel(label: SVGTextElement | null): void {
+        if (!label) return;
+        // A value can cross a zone boundary or extend beyond the track. Give
+        // its complete text box one known surface rather than guessing a zone.
+        const box = label.getBBox();
+        const backing = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        backing.setAttribute("class", "bullet-value-surface");
+        backing.setAttribute("x", String(box.x - 2));
+        backing.setAttribute("y", String(box.y - 1));
+        backing.setAttribute("width", String(box.width + 4));
+        backing.setAttribute("height", String(box.height + 2));
+        backing.setAttribute("fill", this.themeBaseHex);
+        backing.style.pointerEvents = "none";
+        label.parentNode?.insertBefore(backing, label);
     }
 
     /** User-adjustable zone visibility; shipped default = the board's 14%. */
@@ -1524,7 +1526,6 @@ export class Visual implements IVisual {
 
     private resolveValueColor(
         bullet: VisualFormattingSettingsModel["bulletSettings"],
-        ranges: VisualFormattingSettingsModel["qualitativeRanges"],
         row: BulletRow
     ): string {
         // High contrast outranks EVERYTHING, including the fx helper's early
@@ -1541,24 +1542,7 @@ export class Visual implements IVisual {
         const fxResolved = this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? set;
         if (fxResolved !== set) return fxResolved;
         if (set !== VALUE_COLOR_DEFAULT) return set;
-        // Untouched default: contrast against the SURFACE the label sits
-        // on — the qualitative zone blended over the base at the current
-        // zone Visibility (Neil 2026-07-11: raising zone visibility made
-        // theme-picked text unreadable on bright zones). At the shipped
-        // 14% the blend ~= base, so this degrades to the theme pick.
-        let surface = this.themeBaseHex;
-        if (ranges.enabled.value && row.maximum > 0) {
-            const pct = (row.actual / row.maximum) * 100;
-            const poor = clamp(ranges.poorThreshold.value, 0, 100);
-            const acc = Math.max(clamp(ranges.acceptableThreshold.value, 0, 100), poor);
-            const zoneHex = pct < poor
-                ? this.resolveZoneColor(ranges.poorColor.value.value, RANGE_POOR_DEFAULT, "danger")
-                : pct < acc
-                    ? this.resolveZoneColor(ranges.acceptableColor.value.value, RANGE_ACCEPT_DEFAULT, "warning")
-                    : this.resolveZoneColor(ranges.goodColor.value.value, RANGE_GOOD_DEFAULT, "success");
-            surface = mix(this.themeBaseHex, zoneHex, this.zoneOpacity());
-        }
-        return surfaceTokens(themeFor(surface)).text;
+        return this.adaptiveInk(this.themeBaseHex);
     }
 
     // ─── v2 board look (01-17) helpers ─────────────────────────
