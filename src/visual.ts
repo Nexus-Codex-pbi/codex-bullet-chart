@@ -78,6 +78,9 @@ function orderedThresholds(poor: number, acceptable: number): [number, number] {
     return a <= b ? [a, b] : [b, a];
 }
 
+/** Breathing room between two adjacent vertical category labels (px). */
+const LABEL_COLUMN_GAP = 8;
+
 /** A rect dimension the SVG DOM will accept: never negative, never NaN.
  *  Geometry derived from user-settable numbers (target width, thresholds,
  *  row/column pitch) goes through here before it reaches an attribute. */
@@ -1003,7 +1006,23 @@ export class Visual implements IVisual {
         const labelAreaHeight = showLabels ? labelFontSize + 12 : 0;
         const valueAreaHeight = showValue ? valueFontSize + 8 : 0;
         const chartHeight = Math.max(viewportHeight - labelAreaHeight - valueAreaHeight - titleH - 8, 40);
-        const colWidth = clamp(bullet.rowHeight.value, 20, 100);
+        // ─── Column pitch accounts for the MEASURED label (NEXUS cycle-03 §7) ──
+        // Category labels are centred on their column, so the column pitch is
+        // the only thing keeping adjacent labels apart — and the pitch was
+        // Row Height, a number about BAR thickness that knows nothing about
+        // text. At the shipped 36px, "South" and "Central" overlapped by
+        // 1.671875px in the default preset and the documented workaround was
+        // to tell the author to set Row Height 72 by hand. The widest label is
+        // measured with the real font through getComputedTextLength (see
+        // measureMaxTextWidth) and the pitch grows to fit it; a Row Height
+        // already wide enough is left exactly where the author put it.
+        const labelPitch = showLabels
+            ? this.measureMaxTextWidth(rows.map(r => r.category), {
+                family: labelFontFamily, size: labelFontSize,
+                weight: labelWeight, style: labelStyle,
+            }) + LABEL_COLUMN_GAP
+            : 0;
+        const colWidth = Math.max(clamp(bullet.rowHeight.value, 20, 100), labelPitch);
         const totalWidth = rows.length * colWidth + axisAreaWidth;
 
         // Centre horizontally when content is narrower than viewport
@@ -1599,6 +1618,47 @@ export class Visual implements IVisual {
             { transform: `${kind}(0.55)`, opacity: 0.4 },
             { transform: `${kind}(1)`, opacity: 1 },
         ], { duration: 400 });
+    }
+
+    /** Widest rendered advance width across `texts`, measured with the REAL
+     *  font through a throwaway SVG <text> node and getComputedTextLength()
+     *  — the same engine, font stack and weight that will draw the labels a
+     *  moment later. The previous layout estimated 0.65em per character,
+     *  which is why "South"/"Central" collided at the shipped Row Height
+     *  (NEXUS cycle-03 §7). DOM API only (createElementNS + appendChild), no
+     *  markup string, so the certification surface is unchanged; the probe
+     *  is removed before anything else is drawn. Falls back to the old
+     *  estimate if getComputedTextLength is unavailable (jsdom-style hosts). */
+    private measureMaxTextWidth(
+        texts: string[],
+        font: { family: string; size: number; weight: string; style: string }
+    ): number {
+        const estimate = () => Math.max(0, ...texts.map(t => t.length * font.size * 0.65));
+        const probeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        probeSvg.setAttribute("width", "0");
+        probeSvg.setAttribute("height", "0");
+        probeSvg.style.position = "absolute";
+        probeSvg.style.visibility = "hidden";
+        probeSvg.style.pointerEvents = "none";
+        const probe = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        probe.setAttribute("font-family", font.family);
+        probe.setAttribute("font-size", font.size + "px");
+        probe.setAttribute("font-weight", font.weight);
+        probe.setAttribute("font-style", font.style);
+        probeSvg.appendChild(probe);
+        this.svgContainer.appendChild(probeSvg);
+        let widest = 0;
+        try {
+            if (typeof probe.getComputedTextLength !== "function") return estimate();
+            for (const text of texts) {
+                probe.textContent = text;
+                const width = probe.getComputedTextLength();
+                if (isFinite(width) && width > widest) widest = width;
+            }
+        } finally {
+            this.svgContainer.removeChild(probeSvg);
+        }
+        return widest > 0 ? widest : estimate();
     }
 
     /** weightFor(bold, restWeight) idiom (TEXT-01, D-06) — bold on renders
