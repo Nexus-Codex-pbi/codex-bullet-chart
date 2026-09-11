@@ -1450,7 +1450,8 @@ export class Visual implements IVisual {
         rows.forEach(row => {
             const active = selected.has(row.getAttribute("data-selection-key"));
             row.setAttribute("aria-pressed", String(active));
-            row.style.opacity = hasVisibleSelection && !active ? "0.35" : "1";
+            row.style.opacity = !this.isHighContrast && hasVisibleSelection && !active ? "0.35" : "1";
+            row.classList.toggle("bullet-row-selected", this.isHighContrast && active);
         });
     }
 
