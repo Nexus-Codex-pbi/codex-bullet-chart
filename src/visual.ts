@@ -982,8 +982,7 @@ export class Visual implements IVisual {
             Array.from({ length: tickCount + 1 }, (_, i) => this.formatDisplayValue(globalMax * i / tickCount, bullet.valueFormat.value.value as string)),
             { family: axisFontFamily, size: axisFontSize, weight: axisWeight, style: axisStyle }
         ) : 0;
-        const categoryAxisMargin = axis.yAxisTitle.value ? axisFontSize + 14 : 0;
-        const axisAreaWidth = categoryAxisMargin + (showAxis ? tickWidth + 16 + (axisLabelText ? axisLabelFontSize + 8 : 0) : 0);
+        const axisAreaWidth = showAxis ? tickWidth + 16 + (axisLabelText ? axisLabelFontSize + 8 : 0) : 0;
 
         // ─── Title (iframe-internal, Policy 1180.2.5) — reserves vertical
         // space above the chart (see renderHorizontal for the full note).
@@ -994,9 +993,10 @@ export class Visual implements IVisual {
         const labelAreaHeight = showLabels ? labelFontSize + 12 : 0;
         const valueAreaHeight = showValue ? valueFontSize + 10 + targetThickness / 2 : targetThickness / 2 + 4;
         const legacyTitleHeight = axis.showAxisTitles.value && axis.xAxisTitle.value ? axisFontSize + 14 : 0;
+        const categoryTitleHeight = axis.yAxisTitle.value ? axisFontSize + 14 : 0;
         const minChartHeight = Math.max(40, showAxis ? (axisFontSize + 8) * tickCount : 0);
-        const viewportHeight = Math.max(hostHeight, labelAreaHeight + valueAreaHeight + titleH + legacyTitleHeight + 8 + minChartHeight);
-        const chartHeight = viewportHeight - labelAreaHeight - valueAreaHeight - titleH - legacyTitleHeight - 8;
+        const viewportHeight = Math.max(hostHeight, labelAreaHeight + valueAreaHeight + titleH + legacyTitleHeight + categoryTitleHeight + 8 + minChartHeight);
+        const chartHeight = viewportHeight - labelAreaHeight - valueAreaHeight - titleH - legacyTitleHeight - categoryTitleHeight - 8;
         // ─── Column pitch accounts for the MEASURED label (NEXUS cycle-03 §7) ──
         // Category labels are centred on their column, so the column pitch is
         // the only thing keeping adjacent labels apart — and the pitch was
@@ -1020,7 +1020,10 @@ export class Visual implements IVisual {
             family: titleFmt.titleFontFamily.value || "Segoe UI, sans-serif", size: titleFontSize,
             weight: this.weightFor(titleFmt.titleBold.value, "400"), style: titleFmt.titleItalic.value ? "italic" : "normal"
         }) + 16 : 0;
-        const viewportWidth = Math.max(hostWidth, totalWidth, titleWidth);
+        const footerWidth = this.measureMaxTextWidth([
+            axis.yAxisTitle.value || "", axis.showAxisTitles.value ? axis.xAxisTitle.value || "" : ""
+        ], { family: CODEX_TOKENS.fontFamily, size: axisFontSize + 2, weight: "600", style: "normal" }) + axisAreaWidth + 8;
+        const viewportWidth = Math.max(hostWidth, totalWidth, titleWidth, footerWidth);
 
         // Centre horizontally when content is narrower than viewport
         const xOffset = totalWidth < viewportWidth ? (viewportWidth - totalWidth) / 2 + axisAreaWidth : axisAreaWidth;
@@ -1200,7 +1203,7 @@ export class Visual implements IVisual {
             if (showLabels) {
                 svg.append("text")
                     .attr("x", xCenter)
-                    .attr("y", viewportHeight - legacyTitleHeight - 4)
+                    .attr("y", viewportHeight - legacyTitleHeight - categoryTitleHeight - 4)
                     .attr("text-anchor", "middle")
                     .attr("class", "bullet-label")
                     .attr("font-family", labelFontFamily)
@@ -1332,7 +1335,7 @@ export class Visual implements IVisual {
                 const midY = (yScale(0) + yScale(globalMax)) / 2;
                 axisG.append("text")
                     .attr("x", -midY)
-                    .attr("y", categoryAxisMargin + axisLabelFontSize)
+                    .attr("y", axisLabelFontSize)
                     .attr("text-anchor", "middle")
                     .attr("transform", "rotate(-90)")
                     .attr("class", "bullet-axis-title")
@@ -1343,10 +1346,8 @@ export class Visual implements IVisual {
             }
         }
 
-        // Axis titles (vertical mode: X = category axis bottom, Y = value axis left)
-        // xAxisTitle is legacy (retired from the pane — old reports had
-        // showAxisTitles on if they used it). yAxisTitle is the live
-        // Category Axis Label: renders whenever text is set.
+        // Both the legacy X title and live Category Axis Label belong below
+        // the categories. The numeric scale has its own axisLabel control.
         const showAxisTitles = axis.showAxisTitles.value;
         const xAxisTitleText = showAxisTitles ? (axis.xAxisTitle.value || "") : "";
         const yAxisTitleText = axis.yAxisTitle.value || "";
@@ -1367,12 +1368,10 @@ export class Visual implements IVisual {
                     .text(xAxisTitleText);
             }
             if (yAxisTitleText) {
-                const midY = titleH + (valueAreaHeight + chartHeight + valueAreaHeight) / 2;
                 svgEl.append("text")
-                    .attr("x", -midY)
-                    .attr("y", 12)
+                    .attr("x", xOffset + rows.length * colWidth / 2)
+                    .attr("y", viewportHeight - legacyTitleHeight - 4)
                     .attr("text-anchor", "middle")
-                    .attr("transform", "rotate(-90)")
                     .attr("class", "axis-title y-axis-title")
                     .attr("font-size", axisTitleFontSize + "px")
                     .attr("font-weight", "600")

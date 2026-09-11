@@ -38,7 +38,7 @@ The visual provides the following format pane cards:
 - Target Color: Color of the target marker line
 - Target Width: Width of the target line in pixels
 - Bar Height: Height of the actual value bar in pixels
-- Row Height: Total height of each bullet row in pixels
+- Row Height: Minimum row height horizontally or column width vertically; measured labels and markers can increase the spacing
 - Show Value: Toggle visibility of the actual value label
 - Value Format: Number, Percent, or Currency (for the value label)
 - Value Color: Text color of the value label
@@ -66,14 +66,16 @@ The visual provides the following format pane cards:
 - Tick Count: Number of tick marks on the axis
 - Font Size: Font size of axis tick labels in pixels
 - Color: Text color of axis tick labels
-- Axis Label: Label for the axis (shown opposite the category labels)
+- Axis Label: Caption for the numeric scale
+- Category Axis Label: Beside the categories horizontally, below them vertically
 - Label Font Size: Font size of the axis label in pixels
 - Gridlines: Toggle visibility of axis gridlines
 - Gridline Color: Color of axis gridlines
 - Gridline Width: Width of axis gridlines in pixels
-- Show Axis Titles: Toggle visibility of axis titles
-- X Axis Title: Title for the X-axis (value axis)
-- Y Axis Title: Title for the Y-axis (category axis)
+
+Saved reports using the retired Show Axis Titles / X Axis Title controls retain
+their titles. These controls are hidden from the pane; new reports use Axis Label
+and Category Axis Label.
 
 ## How to Use
 1. Import the `.pbiviz` file into Power BI Desktop (from the Visuals pane -> ... -> Import from file).

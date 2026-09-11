@@ -65,7 +65,7 @@ class BulletCardSettings extends FormattingSettingsCard {
     rowHeight = new formattingSettings.NumUpDown({
         name: "rowHeight",
         displayName: "Row Height (px)",
-        description: "Total height per bullet row",
+        description: "Minimum row height (horizontal) or column width (vertical); grows to fit labels",
         value: 36
     });
 
