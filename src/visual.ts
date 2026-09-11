@@ -692,7 +692,7 @@ export class Visual implements IVisual {
                 const n = clamp(bullet.quantisedBlocks?.value ?? 20, 4, 60);
                 const gap = 3;
                 const blockW = Math.max((chartWidth - (n - 1) * gap) / n, 1);
-                const lit = Math.round(clamp(row.actual / row.maximum, 0, 1) * n);
+                const lit = Math.round(clamp(row.actual / (showAxis ? globalMax : row.maximum), 0, 1) * n);
                 const blocksG = g.append("g").attr("class", "bullet-measure-blocks");
                 for (let bi = 0; bi < n; bi++) {
                     const block = blocksG.append("rect")
@@ -1150,7 +1150,7 @@ export class Visual implements IVisual {
                 const n = clamp(bullet.quantisedBlocks?.value ?? 20, 4, 60);
                 const gap = 3;
                 const blockH = Math.max((chartHeight - (n - 1) * gap) / n, 1);
-                const lit = Math.round(clamp(row.actual / row.maximum, 0, 1) * n);
+                const lit = Math.round(clamp(row.actual / (showAxis ? globalMax : row.maximum), 0, 1) * n);
                 const blocksG = g.append("g").attr("class", "bullet-measure-blocks");
                 for (let bi = 0; bi < n; bi++) {
                     const block = blocksG.append("rect")
