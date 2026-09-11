@@ -483,13 +483,13 @@ export class Visual implements IVisual {
         const showLabels = labels.show.value;
         const labelFontSize = clamp(labels.fontSize.value, 8, 24);
         const labelFontFamily = labels.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
-        const labelWeight = this.weightFor(labels.bold.value, "600");
+        const labelWeight = this.weightFor(labels.bold.value, "400");
         const labelStyle = labels.italic.value ? "italic" : "normal";
         const labelDecoration = labels.underline.value ? "underline" : "none";
         const showValue = bullet.showValue.value;
         const valueFontSize = bullet.valueFontSize.value > 0
             ? clamp(bullet.valueFontSize.value, 6, 30)
-            : labelFontSize - 1;
+            : labelFontSize;
 
 
         // Target marker thickness — a user-settable NumUpDown with NO declared
@@ -951,13 +951,13 @@ export class Visual implements IVisual {
         const showLabels = labels.show.value;
         const labelFontSize = clamp(labels.fontSize.value, 8, 24);
         const labelFontFamily = labels.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
-        const labelWeight = this.weightFor(labels.bold.value, "600");
+        const labelWeight = this.weightFor(labels.bold.value, "400");
         const labelStyle = labels.italic.value ? "italic" : "normal";
         const labelDecoration = labels.underline.value ? "underline" : "none";
         const showValue = bullet.showValue.value;
         const valueFontSize = bullet.valueFontSize.value > 0
             ? clamp(bullet.valueFontSize.value, 6, 30)
-            : labelFontSize - 1;
+            : labelFontSize;
         const barWidth = clamp(bullet.barHeight.value, 6, 60);
 
 
