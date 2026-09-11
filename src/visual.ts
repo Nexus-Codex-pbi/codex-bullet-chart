@@ -548,6 +548,17 @@ export class Visual implements IVisual {
             this.svgContainer.style.overflowY = "hidden";
         }
 
+        // ─── Domain reconciliation with the common axis (NEXUS cycle-03 §2) ──
+        // The axis below draws ONE scale, 0..max(all row maximums). Rows were
+        // each scaled to their OWN maximum, so Actual 50/Maximum 100 and
+        // Actual 100/Maximum 200 both drew 313.5px under a single 0-200 axis:
+        // two different values reading as the same length, and no bar end
+        // agreeing with the ticks or gridlines underneath it. When the axis is
+        // shown the rows MUST share its domain. Axis `show` ships FALSE
+        // (settings.ts), so a saved report that never turned the axis on keeps
+        // its per-row "% of its own maximum" reading unchanged.
+        const globalMax = Math.max(...rows.map(r => r.maximum));
+
         rows.forEach((row, idx) => {
             const yCenter = titleH + idx * rowHeight + rowHeight / 2;
             const yTop = yCenter - barHeight / 2;
@@ -555,9 +566,13 @@ export class Visual implements IVisual {
             const rangeTop = yCenter - rangeHeight / 2;
 
             const xScale = scaleLinear()
-                .domain([0, safeDomainMax(row.maximum)])
+                .domain([0, safeDomainMax(showAxis ? globalMax : row.maximum)])
                 .range([0, chartWidth])
                 .clamp(true);
+            // The row's own track ends at ITS maximum, which is the chart edge
+            // only under a per-row domain. Identical arithmetic there; on a
+            // shared domain the track correctly stops short.
+            const trackEnd = xScale(row.maximum);
 
             const g = svg.append("g")
                 .attr("class", "bullet-row")
@@ -599,7 +614,7 @@ export class Visual implements IVisual {
                 g.append("rect")
                     .attr("x", xScale(row.maximum * acceptPct))
                     .attr("y", rangeTop)
-                    .attr("width", chartWidth - xScale(row.maximum * acceptPct))
+                    .attr("width", trackEnd - xScale(row.maximum * acceptPct))
                     .attr("height", rangeHeight)
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.goodColor.value.value, RANGE_GOOD_DEFAULT, "success"))
                     .attr("opacity", this.isHighContrast ? 0.6 : this.zoneOpacity())
@@ -613,7 +628,7 @@ export class Visual implements IVisual {
                 g.append("rect")
                     .attr("x", 0)
                     .attr("y", rangeTop)
-                    .attr("width", chartWidth)
+                    .attr("width", trackEnd)
                     .attr("height", rangeHeight)
                     .attr("fill", this.isHighContrast
                         ? this.colorPalette.background.value
@@ -783,8 +798,9 @@ export class Visual implements IVisual {
         // Axis ticks below the chart + gridlines
         if (showAxis && rows.length > 0) {
             const tickCount = clamp(axis.tickCount.value, 2, 10);
-            const globalMax = Math.max(...rows.map(r => r.maximum));
-            const axisScale = scaleLinear().domain([0, globalMax]).range([0, chartWidth]);
+            // Same globalMax the row scales above now share (NEXUS §2) — it
+            // was re-derived here, which is what let the two diverge.
+            const axisScale = scaleLinear().domain([0, safeDomainMax(globalMax)]).range([0, chartWidth]);
             const chartBottom = titleH + rows.length * rowHeight;
             const axisY = chartBottom + 4;
             const axisG = svg.append("g")
@@ -979,6 +995,11 @@ export class Visual implements IVisual {
                 .text(String(titleFmt.titleText.value));
         }
 
+        // Domain reconciliation with the common axis — see renderHorizontal's
+        // note (NEXUS cycle-03 §2). Vertically the same mismatch produced two
+        // equal 144.5px columns for 50/100 and 100/200 beside one 0-200 axis.
+        const globalMax = Math.max(...rows.map(r => r.maximum));
+
         rows.forEach((row, idx) => {
             const xCenter = xOffset + idx * colWidth + colWidth / 2;
             const xLeft = xCenter - barWidth / 2;
@@ -986,9 +1007,12 @@ export class Visual implements IVisual {
             const rangeLeft = xCenter - rangeWidth / 2;
 
             const yScale = scaleLinear()
-                .domain([0, safeDomainMax(row.maximum)])
+                .domain([0, safeDomainMax(showAxis ? globalMax : row.maximum)])
                 .range([chartHeight + valueAreaHeight + titleH, valueAreaHeight + titleH])
                 .clamp(true);
+            // The row's own track top — the chart top only under a per-row
+            // domain (identical arithmetic there).
+            const trackTop = yScale(row.maximum);
 
             const g = svg.append("g")
                 .attr("class", "bullet-row-vert");
@@ -1038,9 +1062,9 @@ export class Visual implements IVisual {
                 const bgBarTransparencyPct = this.resolveBackgroundBarTransparency(bgBar);
                 g.append("rect")
                     .attr("x", rangeLeft)
-                    .attr("y", yScale(row.maximum))
+                    .attr("y", trackTop)
                     .attr("width", rangeWidth)
-                    .attr("height", chartHeight)
+                    .attr("height", yScale(0) - trackTop)
                     .attr("fill", this.isHighContrast
                         ? this.colorPalette.background.value
                         : toRgba(bgBar.color.value.value ?? "#f0eee6", bgBarTransparencyPct))
@@ -1160,9 +1184,14 @@ export class Visual implements IVisual {
             }
 
             // Invisible hit rect for tooltip and cross-filtering
+            // Hit area spans the whole column, exactly as the horizontal hit
+            // rect spans the whole chartWidth — under a per-row domain
+            // yScale(row.maximum) IS the chart top, so this is the same
+            // rectangle; on a shared domain it stays the full column instead
+            // of sliding down with the row's own track.
             const hitRectV = g.append("rect")
                 .attr("x", rangeLeft - 2)
-                .attr("y", yScale(row.maximum))
+                .attr("y", valueAreaHeight + titleH)
                 .attr("width", rangeWidth + 4)
                 .attr("height", chartHeight)
                 .attr("fill", "none")
@@ -1203,9 +1232,9 @@ export class Visual implements IVisual {
         // Axis ticks on the left side + gridlines
         if (showAxis && rows.length > 0) {
             const tickCount = clamp(axis.tickCount.value, 2, 10);
-            const globalMax = Math.max(...rows.map(r => r.maximum));
+            // Same globalMax the row scales above now share (NEXUS §2).
             const yScale = scaleLinear()
-                .domain([0, globalMax])
+                .domain([0, safeDomainMax(globalMax)])
                 .range([chartHeight + valueAreaHeight + titleH, valueAreaHeight + titleH]);
             const axisX = xOffset - 4;
             const chartRight = xOffset + rows.length * colWidth;
