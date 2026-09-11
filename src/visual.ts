@@ -56,6 +56,18 @@ const TITLE_COLOR_DEFAULT = "#1a1a2e";
  *  sit at 14% opacity so they never compete" with the measure). */
 const ZONE_DIM_OPACITY = 0.14;
 
+/** A bullet scale's domain must never be degenerate. d3's scaleLinear maps
+ *  EVERY input to the RANGE MIDPOINT when domain[0] === domain[1], so an
+ *  Actual of 0 with no Target and no Maximum (auto-maximum = 0 * 1.2 = 0)
+ *  painted a bar across HALF the track — 313.5px of 627px — reading as
+ *  "50% achieved" for a zero (NEXUS cycle-03 §1). Any non-finite or
+ *  non-positive maximum falls back to 1 so 0 lands on the range START: the
+ *  same minimal 1px bar the explicit-Maximum control already draws. A row
+ *  with a real positive maximum is untouched. */
+function safeDomainMax(maximum: number): number {
+    return isFinite(maximum) && maximum > 0 ? maximum : 1;
+}
+
 /** Luminance-based theme pick — same 0.55 threshold convention as the
  *  pbiKpiCard v3 pilot: decides whether the resolved outer background
  *  reads as a "dark" or "light" surface so the v3 token set stays legible. */
@@ -317,13 +329,17 @@ export class Visual implements IVisual {
                 const sortOrderVal = sortOrderCol ? sortOrderCol.values[i] as number : null;
                 const categoryLabel = categories ? String(categories.values[i]) : `Row ${i + 1}`;
 
-                // Auto-calculate maximum if not provided
+                // Auto-calculate maximum if not provided. The auto branch is
+                // itself degenerate when every input is 0 or negative
+                // (max(0, 0) * 1.2 === 0) — safeDomainMax() keeps the domain
+                // usable so the scale can never collapse to its midpoint
+                // (NEXUS cycle-03 §1).
                 const computedMax = maxVal != null && !isNaN(maxVal) && maxVal > 0
                     ? maxVal
-                    : Math.max(
+                    : safeDomainMax(Math.max(
                         actualVal,
                         targetVal != null && !isNaN(targetVal) ? targetVal : 0
-                    ) * 1.2;
+                    ) * 1.2);
 
                 rows.push({
                     category: categoryLabel,
@@ -539,7 +555,7 @@ export class Visual implements IVisual {
             const rangeTop = yCenter - rangeHeight / 2;
 
             const xScale = scaleLinear()
-                .domain([0, row.maximum])
+                .domain([0, safeDomainMax(row.maximum)])
                 .range([0, chartWidth])
                 .clamp(true);
 
@@ -970,7 +986,7 @@ export class Visual implements IVisual {
             const rangeLeft = xCenter - rangeWidth / 2;
 
             const yScale = scaleLinear()
-                .domain([0, row.maximum])
+                .domain([0, safeDomainMax(row.maximum)])
                 .range([chartHeight + valueAreaHeight + titleH, valueAreaHeight + titleH])
                 .clamp(true);
 
