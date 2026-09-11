@@ -1480,7 +1480,18 @@ export class Visual implements IVisual {
             return (value * 100).toFixed(safeFractionDigits(dp)) + "%";
         }
         if (format === "currency") {
-            return "$" + formatValue(value, units, dp);
+            // Sign OUTSIDE the symbol: "-$12.34", never "$-12.34" (NEXUS
+            // cycle-03, "Additional pre-existing gaps" 2). Kept in Bullet's
+            // OWN formatter rather than routed through the vendored
+            // formatModelNumber(), which derives its digits from a model
+            // format string and has no concept of this visual's Display
+            // Units or Decimal Places — routing would have silently dropped
+            // the K/M/B suffix and the precision control the brief requires
+            // be preserved. The sign rule matches the shared helper's,
+            // including "a value that rounds to zero carries no sign".
+            const body = formatValue(Math.abs(value), units, dp);
+            const sign = value < 0 && /[1-9]/.test(body) ? "-" : "";
+            return sign + "$" + body;
         }
         return formatValue(value, units, dp);
     }
