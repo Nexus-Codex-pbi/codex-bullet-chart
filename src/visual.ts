@@ -22,7 +22,7 @@ import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
 import { CODEX_TOKENS, formatValue, clamp } from "./utils";
-import { toRgba } from "./shared/colorHelpers";
+import { toRgba, compositeOver, contrastInk } from "./shared/colorHelpers";
 import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
 import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
@@ -251,10 +251,26 @@ export class Visual implements IVisual {
             // theme hint — matching a black page the palette can't see,
             // Neil 2026-07-11); only the untouched default falls through
             // to the report theme's palette background.
+            // NEXUS cycle-03 §4: the ladder keyed the theme off the RAW fill
+            // hex while that fill is painted WITH TRANSPARENCY, so black at
+            // 95% transparent — rgba(0,0,0,0.05), visually a white card —
+            // resolved "dark" and picked pale rgb(232,230,255) category text
+            // on near-white. The surface a reader actually sees is the fill
+            // COMPOSITED over whatever is behind it (the report/theme
+            // background the host reports, since the visual paints none).
+            // compositeOver() at transparency 0 returns the fill unchanged,
+            // so an opaque background resolves exactly as before; only
+            // genuinely translucent ones move. Transparency 100 paints
+            // nothing at all, so the ladder's existing branch stands: a
+            // USER-SET hex is still honoured as an explicit theme hint
+            // (Neil 2026-07-11 — matching a black page the palette cannot
+            // see), and the untouched default still falls through to the
+            // host palette.
             const bgHexIsUserSet = outerBgHex.toLowerCase() !== "#ffffff";
-            const themeSourceHex = (outerBgTransparencyPct < 100 || bgHexIsUserSet)
-                ? outerBgHex
-                : (this.colorPalette.background?.value ?? outerBgHex);
+            const behindHex = this.colorPalette.background?.value ?? "#ffffff";
+            const themeSourceHex = outerBgTransparencyPct < 100
+                ? compositeOver(outerBgHex, outerBgTransparencyPct, behindHex)
+                : (bgHexIsUserSet ? outerBgHex : (this.colorPalette.background?.value ?? outerBgHex));
             this.theme = themeFor(themeSourceHex);
             this.themeBaseHex = themeSourceHex;
             this.hc = applyHighContrast(this.colorPalette, {
@@ -1397,7 +1413,13 @@ export class Visual implements IVisual {
     private textColorFor(setValue: string, shippedDefault: string): string {
         if (this.isHighContrast) return this.colorPalette.foreground.value;
         if (setValue !== shippedDefault) return setValue;
-        return this.theme === "dark" ? surfaceTokens("dark").text : setValue;
+        // Untouched default: take whichever of the shipped (light-surface) ink
+        // and the dark-theme token actually has more WCAG contrast on the
+        // COMPOSITED surface, instead of trusting a 0.55 luminance bucket.
+        // Reproduces the old pick exactly at the extremes — #ffffff -> the
+        // shipped default, #07071a -> the dark token — and only differs where
+        // the bucket was a coin-flip (NEXUS cycle-03 §4).
+        return contrastInk(this.themeBaseHex, shippedDefault, surfaceTokens("dark").text);
     }
 
     /** User-adjustable zone visibility; shipped default = the board's 14%. */
