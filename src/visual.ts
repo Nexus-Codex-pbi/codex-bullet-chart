@@ -1572,6 +1572,31 @@ export class Visual implements IVisual {
         bullet: VisualFormattingSettingsModel["bulletSettings"],
         row: BulletRow
     ): { base: string; measureBand: Band | null } {
+        // High contrast outranks the helper here too — the same early-return
+        // defect as resolveValueColor (NEXUS cycle-03 §3), with a different
+        // symptom. getColorForMeasure() answers with the HC BACKGROUND, which
+        // differs from the configured constant, so the first early return
+        // below fired and handed back `measureBand: null`. No wrong colour
+        // reached the DOM (the bar render forces the HC foreground either
+        // way), but a null band silently suppressed the status glyph at the
+        // value label — and under HC the bar IS the system foreground, so
+        // colour cannot carry the value-vs-target reading at all and the
+        // glyph is the only channel left. That is the design-language §8 rule
+        // this visual already cites at the glyph site: "under HC a band
+        // reading is never colour-only". The reading must therefore survive
+        // an fx rule and a custom constant, both of which are overridden by
+        // the HC palette anyway.
+        //
+        // A row with NO target has no reading to give: band() answers
+        // "success" for a non-finite target (bandEngine.ts:43, a
+        // divide-by-nothing), and a ✓ there would invent a met target for a
+        // row that never had one. Such a row stays glyph-less.
+        if (this.isHighContrast) {
+            return {
+                base: this.hc.color,
+                measureBand: row.target !== null ? band(row.actual, row.target) : null,
+            };
+        }
         const constant = bullet.barColor.value.value;
         const instanceObjects = this.categoricalCategories?.objects?.[row.originalIndex];
         const fxResolved = this.barColorHelper?.getColorForMeasure(instanceObjects, "barColor") ?? constant;
