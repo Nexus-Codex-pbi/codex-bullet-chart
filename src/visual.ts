@@ -112,7 +112,7 @@ export class Visual implements IVisual {
     private target: HTMLElement;
     private host: IVisualHost;
     private eventService: IVisualEventService;
-    private formattingSettings: VisualFormattingSettingsModel;
+    private formattingSettings: VisualFormattingSettingsModel = new VisualFormattingSettingsModel();
     private formattingSettingsService: FormattingSettingsService;
 
     private selectionManager: ISelectionManager;
