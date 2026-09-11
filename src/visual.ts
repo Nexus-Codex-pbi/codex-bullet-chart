@@ -304,6 +304,7 @@ export class Visual implements IVisual {
                     mirror: sig.mirrorCorners.value,
                     glowMix: this.hc.active || this.theme === "light" ? 0 : 55,
                     muted: false,
+                    highContrast: this.hc.active,
                     cardRadius: clamp(sig.cornerRadius.value, 0, 24),
                 });
             }
@@ -1471,7 +1472,7 @@ export class Visual implements IVisual {
         if (this.formattingSettings && !this.formattingSettings.cardSignature.show.value) {
             this.cornerSignature?.elements.forEach((el) => { el.style.display = "none"; });
         } else if (hcEmpty) {
-            this.cornerSignature?.update(this.colorPalette.foreground.value, { muted: false, glowMix: 0 });
+            this.cornerSignature?.update(this.colorPalette.foreground.value, { muted: false, glowMix: 0, highContrast: true });
         } else {
             this.cornerSignature?.update("#8f8ab8", { muted: true });
         }
