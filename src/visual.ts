@@ -1787,17 +1787,12 @@ export class Visual implements IVisual {
         return bold ? "700" : restWeight;
     }
 
-    /** Resolve the background-bar transparency percentage, honouring the
-     *  D-06 old-report migration path: this visual's ONLY pre-existing
-     *  transparency control was the (now-retired) `transparent` boolean
-     *  ToggleSwitch. If the new `transparency` slider is still at its
-     *  untouched default (0) AND the old boolean is `true` on the saved
-     *  report, map to full transparency (100) so the old report keeps
-     *  rendering as fully transparent. Otherwise the new slider value
-     *  drives — the slider always wins once a user has actually set it. */
+    /** Read the retired boolean only when the slider is absent from the
+     *  saved metadata. An explicitly persisted zero must win too. */
     private resolveBackgroundBarTransparency(bgBar: VisualFormattingSettingsModel["backgroundBar"]): number {
         const sliderValue = bgBar.transparency.value ?? 0;
-        if (sliderValue === 0 && bgBar.transparent.value === true) {
+        const persistedSlider = this.lastUpdateOptions?.dataViews?.[0]?.metadata?.objects?.backgroundBar?.transparency;
+        if (typeof persistedSlider !== "number" && bgBar.transparent.value === true) {
             return 100;
         }
         return sliderValue;

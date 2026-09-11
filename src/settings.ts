@@ -218,12 +218,11 @@ class BackgroundBarSettings extends FormattingSettingsCard {
     // (see visual.ts, both background-bar call sites) purely for the
     // old-report migration path: a saved report with `transparent: true`
     // and the new `transparency` slider still at its untouched default (0)
-    // is mapped to transparency=100 at render. It is removed from `slices`
-    // below so it no longer appears in the format pane — the new
-    // `transparency` Slider is the only control a user can touch going
-    // forward.
+    // is mapped to transparency=100 at render. A hidden slice keeps the
+    // SDK reading old metadata without exposing the retired control.
     transparent = new formattingSettings.ToggleSwitch({
         name: "transparent",
+        visible: false,
         displayName: "Transparent",
         description: "Hide the background bar entirely (matches report background)",
         value: false
@@ -250,6 +249,7 @@ class BackgroundBarSettings extends FormattingSettingsCard {
     name: string = "backgroundBar";
     displayName: string = "Background Bar";
     slices: Array<FormattingSettingsSlice> = [
+        this.transparent,
         this.color,
         this.transparency
     ];
@@ -416,6 +416,7 @@ class AxisCardSettings extends FormattingSettingsCard {
     // as backgroundBar.transparent. New reports use axisLabel only.
     showAxisTitles = new formattingSettings.ToggleSwitch({
         name: "showAxisTitles",
+        visible: false,
         displayName: "Show Axis Titles",
         description: "Display titles below X axis and beside Y axis",
         value: false
@@ -423,6 +424,7 @@ class AxisCardSettings extends FormattingSettingsCard {
 
     xAxisTitle = new formattingSettings.TextInput({
         name: "xAxisTitle",
+        visible: false,
         displayName: "X Axis Title",
         placeholder: "X axis title",
         value: ""
@@ -450,7 +452,9 @@ class AxisCardSettings extends FormattingSettingsCard {
         this.labelFontSize,
         this.gridlines,
         this.gridlineColor,
-        this.gridlineWidth
+        this.gridlineWidth,
+        this.showAxisTitles,
+        this.xAxisTitle
     ];
 }
 
