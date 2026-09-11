@@ -68,6 +68,23 @@ function safeDomainMax(maximum: number): number {
     return isFinite(maximum) && maximum > 0 ? maximum : 1;
 }
 
+/** Qualitative thresholds as an ORDERED [low, high] pair of 0-1 fractions.
+ *  A reversed pair (Poor 90 / Acceptable 30) otherwise produced bands of
+ *  negative width/height that the SVG DOM rejects outright — three console
+ *  errors and three unpainted bands per render (NEXUS cycle-03 §5). */
+function orderedThresholds(poor: number, acceptable: number): [number, number] {
+    const a = clamp(isFinite(poor) ? poor : 0, 0, 100) / 100;
+    const b = clamp(isFinite(acceptable) ? acceptable : 0, 0, 100) / 100;
+    return a <= b ? [a, b] : [b, a];
+}
+
+/** A rect dimension the SVG DOM will accept: never negative, never NaN.
+ *  Geometry derived from user-settable numbers (target width, thresholds,
+ *  row/column pitch) goes through here before it reaches an attribute. */
+function safeSize(value: number): number {
+    return isFinite(value) && value > 0 ? value : 0;
+}
+
 /** Luminance-based theme pick — same 0.55 threshold convention as the
  *  pbiKpiCard v3 pilot: decides whether the resolved outer background
  *  reads as a "dark" or "light" surface so the v3 token set stays legible. */
@@ -489,6 +506,12 @@ export class Visual implements IVisual {
             ? clamp(bullet.valueFontSize.value, 6, 30)
             : labelFontSize - 1;
 
+
+        // Target marker thickness — a user-settable NumUpDown with NO declared
+        // minimum (settings.ts:51), so a negative entry reached the SVG as a
+        // negative <rect> width/height: three rejected rects per render
+        // (NEXUS cycle-03 §5). Never below one device pixel.
+        const targetThickness = Math.max(1, safeSize(bullet.targetWidth.value));
         const showAxis = axis.show.value;
         const axisFontSize = clamp(axis.fontSize.value, 6, 18);
         const axisFontFamily = axis.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
@@ -596,8 +619,12 @@ export class Visual implements IVisual {
 
             // Qualitative range bands
             if (ranges.enabled.value) {
-                const poorPct = clamp(ranges.poorThreshold.value, 0, 100) / 100;
-                const acceptPct = clamp(ranges.acceptableThreshold.value, 0, 100) / 100;
+                // Thresholds are ORDERED, never assumed ordered (NEXUS
+                // cycle-03 §5). Poor 90 / Acceptable 30 used to emit a band
+                // of width xScale(30%) - xScale(90%) — three negative <rect>
+                // widths per render, rejected by the SVG DOM with a console
+                // error and leaving the bands unpainted.
+                const [poorPct, acceptPct] = orderedThresholds(ranges.poorThreshold.value, ranges.acceptableThreshold.value);
 
                 const hcRangeFill = this.isHighContrast ? this.colorPalette.foreground.value : null;
 
@@ -611,7 +638,7 @@ export class Visual implements IVisual {
                 g.append("rect")
                     .attr("x", 0)
                     .attr("y", rangeTop)
-                    .attr("width", xScale(row.maximum * poorPct))
+                    .attr("width", safeSize(xScale(row.maximum * poorPct)))
                     .attr("height", rangeHeight)
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.poorColor.value.value, RANGE_POOR_DEFAULT, "danger"))
                     .attr("opacity", this.isHighContrast ? 0.2 : this.zoneOpacity())
@@ -621,7 +648,7 @@ export class Visual implements IVisual {
                 g.append("rect")
                     .attr("x", xScale(row.maximum * poorPct))
                     .attr("y", rangeTop)
-                    .attr("width", xScale(row.maximum * acceptPct) - xScale(row.maximum * poorPct))
+                    .attr("width", safeSize(xScale(row.maximum * acceptPct) - xScale(row.maximum * poorPct)))
                     .attr("height", rangeHeight)
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.acceptableColor.value.value, RANGE_ACCEPT_DEFAULT, "warning"))
                     .attr("opacity", this.isHighContrast ? 0.4 : this.zoneOpacity());
@@ -630,7 +657,7 @@ export class Visual implements IVisual {
                 g.append("rect")
                     .attr("x", xScale(row.maximum * acceptPct))
                     .attr("y", rangeTop)
-                    .attr("width", trackEnd - xScale(row.maximum * acceptPct))
+                    .attr("width", safeSize(trackEnd - xScale(row.maximum * acceptPct)))
                     .attr("height", rangeHeight)
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.goodColor.value.value, RANGE_GOOD_DEFAULT, "success"))
                     .attr("opacity", this.isHighContrast ? 0.6 : this.zoneOpacity())
@@ -709,9 +736,9 @@ export class Visual implements IVisual {
                 const tickColor = this.resolveTargetColor(bullet);
 
                 const tick = g.append("rect")
-                    .attr("x", targetX - bullet.targetWidth.value / 2)
+                    .attr("x", targetX - targetThickness / 2)
                     .attr("y", markerTop)
-                    .attr("width", bullet.targetWidth.value)
+                    .attr("width", targetThickness)
                     .attr("height", markerHeight)
                     .attr("fill", tickColor)
                     .attr("rx", 2);
@@ -751,7 +778,7 @@ export class Visual implements IVisual {
                 let valueLabelX = Math.max(barWidth, 1) + 6;
                 if (row.target !== null) {
                     const tX = xScale(row.target);
-                    const tHalf = bullet.targetWidth.value / 2 + 4;
+                    const tHalf = targetThickness / 2 + 4;
                     const estW = (hcGlyph + formatted).length * valueFontSize * 0.62;
                     if (tX + tHalf > valueLabelX && tX - tHalf < valueLabelX + estW) {
                         valueLabelX = tX + tHalf + 2;
@@ -947,6 +974,12 @@ export class Visual implements IVisual {
             : labelFontSize - 1;
         const barWidth = clamp(bullet.barHeight.value, 6, 60);
 
+
+        // Target marker thickness — a user-settable NumUpDown with NO declared
+        // minimum (settings.ts:51), so a negative entry reached the SVG as a
+        // negative <rect> width/height: three rejected rects per render
+        // (NEXUS cycle-03 §5). Never below one device pixel.
+        const targetThickness = Math.max(1, safeSize(bullet.targetWidth.value));
         const showAxis = axis.show.value;
         const axisFontSize = clamp(axis.fontSize.value, 6, 18);
         const axisFontFamily = axis.fontFamily.value || "Segoe UI, Tahoma, Geneva, Verdana, sans-serif";
@@ -1035,8 +1068,8 @@ export class Visual implements IVisual {
 
             // Qualitative range bands
             if (ranges.enabled.value) {
-                const poorPct = clamp(ranges.poorThreshold.value, 0, 100) / 100;
-                const acceptPct = clamp(ranges.acceptableThreshold.value, 0, 100) / 100;
+                // Ordered thresholds — see renderHorizontal (NEXUS cycle-03 §5).
+                const [poorPct, acceptPct] = orderedThresholds(ranges.poorThreshold.value, ranges.acceptableThreshold.value);
 
                 const hcRangeFill = this.isHighContrast ? this.colorPalette.foreground.value : null;
 
@@ -1047,7 +1080,7 @@ export class Visual implements IVisual {
                     .attr("x", rangeLeft)
                     .attr("y", yScale(row.maximum * poorPct))
                     .attr("width", rangeWidth)
-                    .attr("height", yScale(0) - yScale(row.maximum * poorPct))
+                    .attr("height", safeSize(yScale(0) - yScale(row.maximum * poorPct)))
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.poorColor.value.value, RANGE_POOR_DEFAULT, "danger"))
                     .attr("opacity", this.isHighContrast ? 0.2 : this.zoneOpacity())
                     .attr("rx", 3);
@@ -1057,7 +1090,7 @@ export class Visual implements IVisual {
                     .attr("x", rangeLeft)
                     .attr("y", yScale(row.maximum * acceptPct))
                     .attr("width", rangeWidth)
-                    .attr("height", yScale(row.maximum * poorPct) - yScale(row.maximum * acceptPct))
+                    .attr("height", safeSize(yScale(row.maximum * poorPct) - yScale(row.maximum * acceptPct)))
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.acceptableColor.value.value, RANGE_ACCEPT_DEFAULT, "warning"))
                     .attr("opacity", this.isHighContrast ? 0.4 : this.zoneOpacity());
 
@@ -1066,7 +1099,7 @@ export class Visual implements IVisual {
                     .attr("x", rangeLeft)
                     .attr("y", yScale(row.maximum))
                     .attr("width", rangeWidth)
-                    .attr("height", yScale(row.maximum * acceptPct) - yScale(row.maximum))
+                    .attr("height", safeSize(yScale(row.maximum * acceptPct) - yScale(row.maximum)))
                     .attr("fill", hcRangeFill || this.resolveZoneColor(ranges.goodColor.value.value, RANGE_GOOD_DEFAULT, "success"))
                     .attr("opacity", this.isHighContrast ? 0.6 : this.zoneOpacity())
                     .attr("rx", 3);
@@ -1145,9 +1178,9 @@ export class Visual implements IVisual {
 
                 const tick = g.append("rect")
                     .attr("x", markerLeft)
-                    .attr("y", targetY - bullet.targetWidth.value / 2)
+                    .attr("y", targetY - targetThickness / 2)
                     .attr("width", markerWidth)
-                    .attr("height", bullet.targetWidth.value)
+                    .attr("height", targetThickness)
                     .attr("fill", tickColor)
                     .attr("rx", 2);
                 const tickGlow = this.glowFor(tickColor, 6);
@@ -1182,7 +1215,7 @@ export class Visual implements IVisual {
                 let valueLabelY = Math.max(barTopY - 4, titleH + valueFontSize);
                 if (row.target !== null) {
                     const tY = yScale(row.target);
-                    const tHalf = bullet.targetWidth.value / 2 + 4;
+                    const tHalf = targetThickness / 2 + 4;
                     if (tY - tHalf < valueLabelY && tY + tHalf > valueLabelY - valueFontSize) {
                         valueLabelY = Math.max(tY - tHalf - 2, titleH + valueFontSize);
                     }

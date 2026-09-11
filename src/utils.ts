@@ -34,6 +34,14 @@ export function safeNumber(v: any): number | null {
     return isNaN(n) ? null : n;
 }
 
+/** Fraction-digit count that Number.prototype.toFixed will accept (0-100).
+ *  Anything non-finite or out of range is brought back into range rather
+ *  than thrown (NEXUS cycle-03 §5). */
+export function safeFractionDigits(decimals: number): number {
+    if (!isFinite(decimals)) return 0;
+    return clamp(Math.trunc(decimals), 0, 100);
+}
+
 /** Format a number with display units (auto/none/thousands/millions/billions) */
 export function formatValue(value: number, units: string = "auto", decimals: number = 1): string {
     if (value === null || value === undefined || isNaN(value)) return "—";
@@ -51,7 +59,11 @@ export function formatValue(value: number, units: string = "auto", decimals: num
     else if (units === "billions") { divisor = 1e9; suffix = "B"; }
 
     const scaled = value / divisor;
-    return scaled.toFixed(decimals) + suffix;
+    // toFixed() throws RangeError outside 0-100, and the Decimal Places
+    // NumUpDown (settings.ts:313) declares no minimum — a -1 entry aborted
+    // the whole render through renderingFailed, so the report showed nothing
+    // at all rather than one badly-rounded number (NEXUS cycle-03 §5).
+    return scaled.toFixed(safeFractionDigits(decimals)) + suffix;
 }
 
 /** Interpolate a colour between two hex colours at position t (0-1) */
