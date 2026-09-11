@@ -21,7 +21,7 @@ import { dataViewWildcard } from "powerbi-visuals-utils-dataviewutils";
 import { ColorHelper } from "powerbi-visuals-utils-colorutils";
 
 import { VisualFormattingSettingsModel, textAlignFor } from "./settings";
-import { CODEX_TOKENS, formatValue, clamp } from "./utils";
+import { CODEX_TOKENS, formatValue, clamp, safeFractionDigits } from "./utils";
 import { toRgba, compositeOver, contrastInk } from "./shared/colorHelpers";
 import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
@@ -1421,14 +1421,21 @@ export class Visual implements IVisual {
     }
 
     private formatDisplayValue(value: number, format: string): string {
-        if (format === "percent") {
-            return (value * 100).toFixed(1) + "%";
-        }
         // #657 — was hardcoded ("auto", 1); now honours the Data Labels card. Defaults are
         // auto / 1, so saved reports render exactly as before.
         const lbl = this.formattingSettings.labelSettings as any;
         const units = String(lbl.displayUnits?.value?.value ?? "auto");
         const dp = typeof lbl.decimalPlaces?.value === "number" ? lbl.decimalPlaces.value : 1;
+        if (format === "percent") {
+            // The Decimal Places control used to be read AFTER this return, so
+            // percentages were pinned at one decimal whatever the pane said:
+            // 0.12345 rendered "12.3%" at precision 0 and at precision 3 alike,
+            // while the same number under the numeric format honoured the
+            // control (NEXUS cycle-03 §6). Decimal Places ships as 1
+            // (settings.ts:316), so a saved report that never touched it still
+            // renders exactly one decimal.
+            return (value * 100).toFixed(safeFractionDigits(dp)) + "%";
+        }
         if (format === "currency") {
             return "$" + formatValue(value, units, dp);
         }
