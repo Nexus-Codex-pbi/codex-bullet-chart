@@ -152,10 +152,15 @@ export class Visual implements IVisual {
 
     private lastUpdateOptions: VisualUpdateOptions | null = null;
     private destroyed = false;
+    private selectionCallbackState: { visual: Visual | null } | null = null;
     private readonly onContextMenu = (e: MouseEvent): void => {
         if (this.destroyed) return;
         this.selectionManager.showContextMenu({}, { x: e.clientX, y: e.clientY });
         e.preventDefault();
+    };
+    private readonly onBackgroundClick = (e: MouseEvent): void => {
+        if (this.destroyed || (e.target instanceof Element && e.target.closest(".bullet-row,.bullet-row-vert"))) return;
+        this.selectionManager.clear().then(() => this.syncSelection());
     };
 
 
@@ -182,6 +187,7 @@ export class Visual implements IVisual {
 
         // Context menu on right-click
         this.target.addEventListener("contextmenu", this.onContextMenu);
+        this.target.addEventListener("click", this.onBackgroundClick);
 
         // Build DOM skeleton
         this.container = document.createElement("div");
@@ -204,8 +210,11 @@ export class Visual implements IVisual {
             glowMix: 0,
         });
 
-        // Allow deselection
-        this.selectionManager.registerOnSelectCallback(() => {});
+        // The host has no unsubscribe API. Detach the visual from this small
+        // callback state on destroy so the subscription cannot retain it.
+        const callbackState = { visual: this as Visual | null };
+        this.selectionCallbackState = callbackState;
+        this.selectionManager.registerOnSelectCallback(() => callbackState.visual?.syncSelection());
     }
 
     public update(options: VisualUpdateOptions): void {
@@ -459,6 +468,7 @@ export class Visual implements IVisual {
             } else {
                 this.renderHorizontal(rows, options, bullet, ranges, bgBar, labels, axis, titleFmt);
             }
+            this.syncSelection();
 
             this.eventService.renderingFinished(options);
         } catch (e) {
@@ -795,7 +805,8 @@ export class Visual implements IVisual {
 
             const tooltipItems: VisualTooltipDataItem[] = [
                 { displayName: "Category", value: row.category },
-                { displayName: "Actual", value: this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string) }
+                { displayName: "Actual", value: this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string) },
+                { displayName: "Maximum", value: this.formatDisplayValue(row.maximum, bullet.valueFormat.value.value as string) }
             ];
             if (row.target !== null) {
                 tooltipItems.push({ displayName: "Target", value: this.formatDisplayValue(row.target, bullet.valueFormat.value.value as string) });
@@ -805,23 +816,7 @@ export class Visual implements IVisual {
 
             const hitNode = hitRect.node() as SVGRectElement;
             const selId = this.rowSelectionIds[idx];
-            hitNode.addEventListener("mousemove", (e: MouseEvent) => {
-                this.tooltipService.show({
-                    coordinates: [e.clientX, e.clientY],
-                    isTouchEvent: false,
-                    dataItems: tooltipItems,
-                    identities: selId ? [selId] : []
-                });
-            });
-            hitNode.addEventListener("mouseleave", () => {
-                this.tooltipService.hide({ isTouchEvent: false, immediately: false });
-            });
-            hitNode.addEventListener("click", (e: MouseEvent) => {
-                if (selId) {
-                    this.selectionManager.select(selId, e.ctrlKey || e.metaKey);
-                }
-                e.stopPropagation();
-            });
+            this.bindRowInteractions(g.node(), hitNode, selId, tooltipItems);
         });
 
         // Axis ticks below the chart + gridlines
@@ -1252,7 +1247,8 @@ export class Visual implements IVisual {
 
             const tooltipItemsV: VisualTooltipDataItem[] = [
                 { displayName: "Category", value: row.category },
-                { displayName: "Actual", value: this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string) }
+                { displayName: "Actual", value: this.formatDisplayValue(row.actual, bullet.valueFormat.value.value as string) },
+                { displayName: "Maximum", value: this.formatDisplayValue(row.maximum, bullet.valueFormat.value.value as string) }
             ];
             if (row.target !== null) {
                 tooltipItemsV.push({ displayName: "Target", value: this.formatDisplayValue(row.target, bullet.valueFormat.value.value as string) });
@@ -1262,23 +1258,7 @@ export class Visual implements IVisual {
 
             const hitNodeV = hitRectV.node() as SVGRectElement;
             const selIdV = this.rowSelectionIds[idx];
-            hitNodeV.addEventListener("mousemove", (e: MouseEvent) => {
-                this.tooltipService.show({
-                    coordinates: [e.clientX, e.clientY],
-                    isTouchEvent: false,
-                    dataItems: tooltipItemsV,
-                    identities: selIdV ? [selIdV] : []
-                });
-            });
-            hitNodeV.addEventListener("mouseleave", () => {
-                this.tooltipService.hide({ isTouchEvent: false, immediately: false });
-            });
-            hitNodeV.addEventListener("click", (e: MouseEvent) => {
-                if (selIdV) {
-                    this.selectionManager.select(selIdV, e.ctrlKey || e.metaKey);
-                }
-                e.stopPropagation();
-            });
+            this.bindRowInteractions(g.node(), hitNodeV, selIdV, tooltipItemsV);
         });
 
         // Axis ticks on the left side + gridlines
@@ -1390,6 +1370,78 @@ export class Visual implements IVisual {
                     .text(yAxisTitleText);
             }
         }
+    }
+
+    private bindRowInteractions(
+        row: SVGGElement | null,
+        hit: SVGRectElement,
+        identity: ISelectionId | undefined,
+        items: VisualTooltipDataItem[]
+    ): void {
+        if (!row) return;
+        row.setAttribute("role", identity ? "button" : "img");
+        row.setAttribute("aria-label", items.map(item => `${item.displayName}: ${item.value}`).join(". "));
+        row.style.color = this.isHighContrast ? this.colorPalette.foreground.value : this.adaptiveInk(this.themeBaseHex);
+        if (identity) {
+            row.setAttribute("tabindex", "0");
+            row.setAttribute("data-selection-key", identity.getKey());
+        }
+        const selectRow = (multi: boolean): void => {
+            if (!this.destroyed && identity) this.selectionManager.select(identity, multi).then(() => this.syncSelection());
+        };
+        hit.addEventListener("mousemove", (event: MouseEvent) => {
+            if (this.destroyed) return;
+            this.tooltipService.show({
+                coordinates: [event.clientX, event.clientY], isTouchEvent: false,
+                dataItems: items, identities: identity ? [identity] : []
+            });
+        });
+        hit.addEventListener("mouseleave", () => {
+            if (!this.destroyed) this.tooltipService.hide({ isTouchEvent: false, immediately: false });
+        });
+        row.addEventListener("click", (event: MouseEvent) => {
+            selectRow(event.ctrlKey || event.metaKey);
+            event.stopPropagation();
+        });
+        row.addEventListener("contextmenu", (event: MouseEvent) => {
+            if (this.destroyed) return;
+            this.selectionManager.showContextMenu(identity ?? {}, { x: event.clientX, y: event.clientY });
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        row.addEventListener("keydown", (event: KeyboardEvent) => {
+            if (this.destroyed) return;
+            if (event.key === "Enter" || event.key === " ") {
+                selectRow(event.ctrlKey || event.metaKey);
+            } else if (event.key === "Escape") {
+                this.selectionManager.clear().then(() => this.syncSelection());
+            } else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+                const bounds = row.getBoundingClientRect();
+                this.selectionManager.showContextMenu(identity ?? {}, { x: bounds.left, y: bounds.top });
+            } else {
+                const rows = Array.from(this.svgContainer.querySelectorAll<SVGGElement>("[data-selection-key]"));
+                const index = rows.indexOf(row);
+                const next = event.key === "Home" ? 0 : event.key === "End" ? rows.length - 1
+                    : ["ArrowDown", "ArrowRight"].includes(event.key) ? Math.min(index + 1, rows.length - 1)
+                    : ["ArrowUp", "ArrowLeft"].includes(event.key) ? Math.max(index - 1, 0) : -1;
+                if (next < 0) return;
+                rows[next]?.focus();
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        });
+    }
+
+    private syncSelection(): void {
+        if (this.destroyed) return;
+        const selected = new Set(this.selectionManager.getSelectionIds().map(identity => (identity as ISelectionId).getKey()));
+        const rows = Array.from(this.svgContainer.querySelectorAll<SVGGElement>("[data-selection-key]"));
+        const hasVisibleSelection = rows.some(row => selected.has(row.getAttribute("data-selection-key")));
+        rows.forEach(row => {
+            const active = selected.has(row.getAttribute("data-selection-key"));
+            row.setAttribute("aria-pressed", String(active));
+            row.style.opacity = hasVisibleSelection && !active ? "0.35" : "1";
+        });
     }
 
     private renderEmpty(): void {
@@ -1738,6 +1790,9 @@ export class Visual implements IVisual {
         this.licenseGate.dispose();
         this.lastUpdateOptions = null;
         this.target.removeEventListener("contextmenu", this.onContextMenu);
+        this.target.removeEventListener("click", this.onBackgroundClick);
+        if (this.selectionCallbackState) this.selectionCallbackState.visual = null;
+        this.selectionCallbackState = null;
         this.cornerSignature?.destroy();
         this.cornerSignature = null;
         while (this.svgContainer.firstChild) {
