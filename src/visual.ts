@@ -1697,7 +1697,8 @@ export class Visual implements IVisual {
      *  resolves (D-16 sentinel); HC keeps the system-slot mapping. */
     private resolveTargetColor(bullet: VisualFormattingSettingsModel["bulletSettings"]): string {
         if (this.hc.active) {
-            return this.colorPalette.foregroundSelected?.value || this.hc.color;
+            const selected = this.colorPalette.foregroundSelected?.value;
+            return selected && contrastRatio(selected, this.themeBaseHex) >= 3 ? selected : this.hc.color;
         }
         const constant = bullet.targetColor.value.value;
         return constant !== TARGET_COLOR_DEFAULT ? constant : targetToken(this.theme);
