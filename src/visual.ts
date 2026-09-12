@@ -27,7 +27,7 @@ import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
 import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle, CardSignatureVariant } from "./shared/cardSignature";
-import { resolveCodexTheme, neonColorFor, neonFilter, ResolvedCodexTheme } from "./shared/codexThemeSettings";
+import { resolveCodexTheme, neonColorFor, neonFilter, forcedInk, ResolvedCodexTheme } from "./shared/codexThemeSettings";
 import { settle } from "./shared/motion";
 import { applyHighContrast, statusGlyph, HighContrastResolved } from "./shared/highContrast";
 
@@ -572,7 +572,7 @@ export class Visual implements IVisual {
         const axisLabelText = axis.axisLabel.value || "";
         const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
         const showGridlines = axis.gridlines.value;
-        const gridlineColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.gridlineColor.value.value;
+        const gridlineColor = this.resolveGridlineColor(axis);
         const gridlineWidth = clamp(axis.gridlineWidth.value, 1, 4);
         const axisAreaHeight = showAxis ? axisFontSize + 16 + (axisLabelText ? axisLabelFontSize + 4 : 0) : 0;
         const globalMax = Math.max(...rows.map(r => r.maximum));
@@ -715,7 +715,6 @@ export class Visual implements IVisual {
                 // render the rect — transparency is expressed via alpha,
                 // never by omitting the element (D-05) — with the D-06
                 // old-report migration read (see resolveBackgroundBarTransparency).
-                const bgBarTransparencyPct = this.resolveBackgroundBarTransparency(bgBar);
                 g.append("rect")
                     .attr("x", 0)
                     .attr("y", rangeTop)
@@ -723,7 +722,7 @@ export class Visual implements IVisual {
                     .attr("height", rangeHeight)
                     .attr("fill", this.isHighContrast
                         ? this.colorPalette.background.value
-                        : toRgba(bgBar.color.value.value ?? "#f0eee6", bgBarTransparencyPct))
+                        : this.resolveTrackColor(bgBar))
                     .attr("rx", 2);
             }
 
@@ -1023,7 +1022,7 @@ export class Visual implements IVisual {
         const axisLabelText = axis.axisLabel.value || "";
         const axisLabelFontSize = clamp(axis.labelFontSize.value, 6, 24);
         const showGridlines = axis.gridlines.value;
-        const gridlineColor = this.isHighContrast ? this.colorPalette.foreground.value : axis.gridlineColor.value.value;
+        const gridlineColor = this.resolveGridlineColor(axis);
         const gridlineWidth = clamp(axis.gridlineWidth.value, 1, 4);
         const globalMax = Math.max(...rows.map(r => r.maximum));
         const tickCount = Math.round(clamp(axis.tickCount.value, 2, 10));
@@ -1173,7 +1172,6 @@ export class Visual implements IVisual {
                 // alpha, never by omitting the element (D-05) — with the
                 // D-06 old-report migration read (see
                 // resolveBackgroundBarTransparency).
-                const bgBarTransparencyPct = this.resolveBackgroundBarTransparency(bgBar);
                 g.append("rect")
                     .attr("x", rangeLeft)
                     .attr("y", trackTop)
@@ -1181,7 +1179,7 @@ export class Visual implements IVisual {
                     .attr("height", yScale(0) - trackTop)
                     .attr("fill", this.isHighContrast
                         ? this.colorPalette.background.value
-                        : toRgba(bgBar.color.value.value ?? "#f0eee6", bgBarTransparencyPct))
+                        : this.resolveTrackColor(bgBar))
                     .attr("rx", 2);
             }
 
@@ -1609,18 +1607,24 @@ export class Visual implements IVisual {
      *  theme text token) > shipped light default. */
     private textColorFor(setValue: string, shippedDefault: string): string {
         if (this.isHighContrast) return this.colorPalette.foreground.value;
-        // Nexus Codex Theme (#819): "adapt only when untouched" becomes
-        // "adapt when FORCED or untouched". A forced mode owns its own
-        // surface, so a pane ink picked against the old one is not a choice
-        // about this one. Auto (inkOverride false) keeps every pane ink.
-        if (!this.inkOverride && setValue !== shippedDefault) return setValue;
-        // Untouched default: take whichever of the shipped (light-surface) ink
-        // and the dark-theme token actually has more WCAG contrast on the
-        // COMPOSITED surface, instead of trusting a 0.55 luminance bucket.
+        // Nexus Codex Theme (#819) rule 3: explicit inks are GUARDED, not
+        // replaced — one shared rule for the whole suite (forcedInk). Auto
+        // keeps every pane ink and adapts only an untouched default; a forced
+        // mode keeps an explicit ink that still reads at 4.5:1 on its own
+        // surface and falls back to the mode's default ink otherwise.
+        //
+        // The mode default is the unchanged pick: whichever of the shipped
+        // (light-surface) ink and the dark-theme token has more WCAG contrast
+        // on the COMPOSITED surface, instead of a 0.55 luminance bucket.
         // Reproduces the old pick exactly at the extremes — #ffffff -> the
         // shipped default, #07071a -> the dark token — and only differs where
         // the bucket was a coin-flip (NEXUS cycle-03 §4).
-        return this.adaptiveInk(this.themeBaseHex, shippedDefault);
+        return forcedInk(
+            setValue,
+            this.adaptiveInk(this.themeBaseHex, shippedDefault),
+            this.codex,
+            setValue === shippedDefault
+        );
     }
 
     private adaptiveInk(surface: string, darkInk = surfaceTokens("light").text): string {
@@ -1667,11 +1671,12 @@ export class Visual implements IVisual {
         const instanceObjects = this.categoricalCategories?.objects?.[row.originalIndex];
         const fxResolved = this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? set;
         if (fxResolved !== set) return fxResolved;
-        // A forced Codex mode owns this ink (#819) — but an fx RULE above is
-        // data, not chrome, so it still outranks the override (the pilot's
-        // `data.textColour || adaptiveValue` ladder).
-        if (!this.inkOverride && set !== VALUE_COLOR_DEFAULT) return set;
-        return this.adaptiveInk(this.themeBaseHex);
+        // #819 rule 3, same guard as textColorFor: an fx RULE above is data,
+        // not chrome, so it is exempt from the forced-mode override entirely
+        // (the pilot's `data.textColour || adaptiveValue` ladder); a plain
+        // explicit ink is kept under a forced mode only while it still reads
+        // on that mode's surface.
+        return forcedInk(set, this.adaptiveInk(this.themeBaseHex), this.codex, set === VALUE_COLOR_DEFAULT);
     }
 
     // ─── v2 board look (01-17) helpers ─────────────────────────
@@ -1754,14 +1759,17 @@ export class Visual implements IVisual {
      *  glow). Empty string = no filter applied.
      *
      *  Nexus Codex Theme (#819): under Neon the budget becomes the card's
-     *  Glow Strength and the flare takes the shared double-halo form, in the
-     *  flare colour (scope "flare") or the mark's own hue (scope "all"). The
-     *  mark's FILL is never recoloured — only what it radiates. Auto, Dark
-     *  and Light keep the frozen 55%-at-`radius` single shadow. */
+     *  Glow Strength and the flare takes the shared double-halo form. These
+     *  marks are SEMANTIC — the measure's colour IS the value-vs-target
+     *  verdict and the tick IS the target token — so contract rule 1 keeps
+     *  them out of `neonColorFor`: under either scope they radiate in their
+     *  OWN hue, never the flare's. The mark's FILL is never recoloured —
+     *  only what it radiates. Auto, Dark and Light keep the frozen
+     *  55%-at-`radius` single shadow. */
     private glowFor(base: string, radius: number): string {
         if (this.hc.active) return "";
         if (this.codex.neon) {
-            const flare = neonFilter(neonColorFor(base, this.codex), this.codex.glow);
+            const flare = neonFilter(base, this.codex.glow);
             return flare === "none" ? "" : flare;
         }
         return this.theme === "light"
@@ -1790,6 +1798,29 @@ export class Visual implements IVisual {
         }
         const constant = bullet.targetColor.value.value;
         return constant !== TARGET_COLOR_DEFAULT ? constant : targetToken(this.theme);
+    }
+
+    /** Background-bar fill — #819 rule 2: the empty track behind the measure
+     *  is CHROME, not data, so a forced mode paints its own surface token
+     *  instead of a colour authored for the other tone (the shipped #f0eee6
+     *  is a light-surface cream). Same token the unlit quantised block
+     *  already takes. The Transparency slider still applies; Auto keeps the
+     *  pane colour exactly. */
+    private resolveTrackColor(bgBar: VisualFormattingSettingsModel["backgroundBar"]): string {
+        const hex = this.codex.mode === "auto"
+            ? (bgBar.color.value.value ?? "#f0eee6")
+            : surfaceTokens(this.codex.theme).track;
+        return toRgba(hex, this.resolveBackgroundBarTransparency(bgBar));
+    }
+
+    /** Gridline stroke — #819 rule 2: gridlines are chrome too, so a forced
+     *  mode takes its own divider token (the shipped #e0e0e0 is light-surface
+     *  chrome). HC outranks both; Auto keeps the pane colour. */
+    private resolveGridlineColor(axis: VisualFormattingSettingsModel["axisSettings"]): string {
+        if (this.isHighContrast) return this.colorPalette.foreground.value;
+        return this.codex.mode === "auto"
+            ? axis.gridlineColor.value.value
+            : surfaceTokens(this.codex.theme).border;
     }
 
     /** Qualitative zone colour — band tokens as the new defaults (dim
