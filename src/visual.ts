@@ -27,7 +27,7 @@ import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
 import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle, CardSignatureVariant } from "./shared/cardSignature";
-import { resolveCodexTheme, neonColorFor, neonFilter, forcedInk, ResolvedCodexTheme } from "./shared/codexThemeSettings";
+import { resolveCodexTheme, neonColorFor, neonFilter, forcedInk, forcedChrome, isFxResolved, ResolvedCodexTheme } from "./shared/codexThemeSettings";
 import { settle } from "./shared/motion";
 import { applyHighContrast, statusGlyph, HighContrastResolved } from "./shared/highContrast";
 
@@ -52,6 +52,11 @@ const LABEL_COLOR_DEFAULT = "#333333";
 const VALUE_COLOR_DEFAULT = "#5e5d5a";
 const AXIS_COLOR_DEFAULT = "#888888";
 const TITLE_COLOR_DEFAULT = "#1a1a2e";
+// Chrome shipped defaults (#819 pass 2): the "untouched" sentinels the
+// guarded rule 2 (forcedChrome) reads to tell a deliberate author colour
+// from a picker nobody has moved. Both are light-surface values.
+const BG_BAR_COLOR_DEFAULT = "#f0eee6";
+const GRIDLINE_COLOR_DEFAULT = "#e0e0e0";
 
 /** Dim-step opacity for qualitative range zones (board: zones "always
  *  sit at 14% opacity so they never compete" with the measure). */
@@ -1662,15 +1667,21 @@ export class Visual implements IVisual {
         // return (NEXUS cycle-03 §3). ColorHelper.getColorForMeasure() called
         // without a themeColorName returns getThemeColor("background") under
         // high contrast — i.e. BLACK on a black host — and because that
-        // differs from the configured constant it satisfied the
-        // `fxResolved !== set` early return below and shipped straight to the
+        // differs from the configured constant it satisfied the fx early
+        // return below (then `fxResolved !== set`, now the shared
+        // isFxResolved) and shipped straight to the
         // DOM: the full-scale value read black on black in both orientations.
         // The HC branch has to come first; it was previously one line late.
         if (this.isHighContrast) return this.colorPalette.foreground.value;
         const set = bullet.valueColor.value.value;
         const instanceObjects = this.categoricalCategories?.objects?.[row.originalIndex];
         const fxResolved = this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? set;
-        if (fxResolved !== set) return fxResolved;
+        // #819 pass 2: the suite's ONE fx test. The local `fxResolved !== set`
+        // idiom is now the shared isFxResolved() — same signal (a resolved
+        // colour that differs from the pane's static value is a host-evaluated
+        // rule), one name, and case-insensitive so a helper answering #FF0000
+        // against a pane #ff0000 is no longer mistaken for a rule.
+        if (isFxResolved(fxResolved, set)) return fxResolved;
         // #819 rule 3, same guard as textColorFor: an fx RULE above is data,
         // not chrome, so it is exempt from the forced-mode override entirely
         // (the pilot's `data.textColour || adaptiveValue` ladder); a plain
@@ -1718,7 +1729,9 @@ export class Visual implements IVisual {
         const constant = bullet.barColor.value.value;
         const instanceObjects = this.categoricalCategories?.objects?.[row.originalIndex];
         const fxResolved = this.barColorHelper?.getColorForMeasure(instanceObjects, "barColor") ?? constant;
-        if (fxResolved !== constant) return { base: fxResolved, measureBand: null };
+        // #819 pass 2: the shared fx test (see resolveValueColor) — an fx rule
+        // is data and is painted verbatim, never guarded by a forced mode.
+        if (isFxResolved(fxResolved, constant)) return { base: fxResolved, measureBand: null };
         if (constant !== BAR_COLOR_DEFAULT) return { base: constant, measureBand: null };
         const measureBand = band(row.actual, row.target ?? NaN);
         return { base: bandColor(measureBand, this.theme), measureBand };
@@ -1800,27 +1813,41 @@ export class Visual implements IVisual {
         return constant !== TARGET_COLOR_DEFAULT ? constant : targetToken(this.theme);
     }
 
-    /** Background-bar fill — #819 rule 2: the empty track behind the measure
-     *  is CHROME, not data, so a forced mode paints its own surface token
-     *  instead of a colour authored for the other tone (the shipped #f0eee6
-     *  is a light-surface cream). Same token the unlit quantised block
-     *  already takes. The Transparency slider still applies; Auto keeps the
-     *  pane colour exactly. */
+    /** Background-bar fill — #819 rule 2, GUARDED (pass 2): the empty track
+     *  behind the measure is CHROME, not data, so a forced mode paints its
+     *  own surface token instead of a colour authored for the other tone
+     *  (the shipped #f0eee6 is a light-surface cream) — but only while the
+     *  picker is untouched, or the author's own colour has stopped
+     *  separating from the mode's surface. An explicit track colour that
+     *  still reads as a track (>= 1.3:1) survives the forced mode instead of
+     *  having its picker made inert. Same token the unlit quantised block
+     *  takes. The Transparency slider still applies; Auto keeps the pane
+     *  colour exactly. */
     private resolveTrackColor(bgBar: VisualFormattingSettingsModel["backgroundBar"]): string {
-        const hex = this.codex.mode === "auto"
-            ? (bgBar.color.value.value ?? "#f0eee6")
-            : surfaceTokens(this.codex.theme).track;
+        const userHex = bgBar.color.value.value ?? BG_BAR_COLOR_DEFAULT;
+        const hex = forcedChrome(
+            userHex,
+            surfaceTokens(this.codex.theme).track,
+            this.codex,
+            userHex === BG_BAR_COLOR_DEFAULT
+        );
         return toRgba(hex, this.resolveBackgroundBarTransparency(bgBar));
     }
 
-    /** Gridline stroke — #819 rule 2: gridlines are chrome too, so a forced
-     *  mode takes its own divider token (the shipped #e0e0e0 is light-surface
-     *  chrome). HC outranks both; Auto keeps the pane colour. */
+    /** Gridline stroke — #819 rule 2, GUARDED (pass 2): gridlines are chrome
+     *  too, so a forced mode takes its own divider token (the shipped
+     *  #e0e0e0 is light-surface chrome) unless the author picked a gridline
+     *  colour that still separates from the mode's surface. HC outranks
+     *  both; Auto keeps the pane colour. */
     private resolveGridlineColor(axis: VisualFormattingSettingsModel["axisSettings"]): string {
         if (this.isHighContrast) return this.colorPalette.foreground.value;
-        return this.codex.mode === "auto"
-            ? axis.gridlineColor.value.value
-            : surfaceTokens(this.codex.theme).border;
+        const userHex = axis.gridlineColor.value.value;
+        return forcedChrome(
+            userHex,
+            surfaceTokens(this.codex.theme).border,
+            this.codex,
+            userHex === GRIDLINE_COLOR_DEFAULT
+        );
     }
 
     /** Qualitative zone colour — band tokens as the new defaults (dim
