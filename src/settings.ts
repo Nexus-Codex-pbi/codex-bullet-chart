@@ -9,6 +9,7 @@ import FormattingSettingsSlice = formattingSettings.Slice;
 import FormattingSettingsModel = formattingSettings.Model;
 
 import { BackgroundSettings } from "./shared/backgroundSettings";
+import { CodexThemeSettings } from "./shared/codexThemeSettings";
 import { BorderSettings } from "./shared/borderSettings";
 import { TitleSettings } from "./shared/titleSettings";
 import { alignSelfFor, textAlignFor } from "./shared/textFormatting";
@@ -528,6 +529,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
     labelSettings = new LabelCardSettings();
     axisSettings = new AxisCardSettings();
     background = new BackgroundSettings();
+    codexTheme = new CodexThemeSettings();
     cardSignature = new CardSignatureSettings();
     visualBorder = new BorderSettings();
 
@@ -555,6 +557,7 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
         this.labelSettings,
         this.axisSettings,
         this.background,
+        this.codexTheme,
         this.cardSignature,
         this.visualBorder
     ];

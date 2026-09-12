@@ -27,6 +27,7 @@ import { applyBorder } from "./shared/borderSettings";
 import { Band, Theme, band, bandColor, targetToken, accentToken } from "./shared/bandEngine";
 import { surfaceTokens, TABULAR_NUMS, mix } from "./shared/designTokens";
 import { makeCornerBrackets, CardSignatureHandle, CardSignatureVariant } from "./shared/cardSignature";
+import { resolveCodexTheme, neonColorFor, neonFilter, ResolvedCodexTheme } from "./shared/codexThemeSettings";
 import { settle } from "./shared/motion";
 import { applyHighContrast, statusGlyph, HighContrastResolved } from "./shared/highContrast";
 
@@ -142,6 +143,15 @@ export class Visual implements IVisual {
     // gates the settle-once motion (§6 — values settle ONCE, never loop).
     private theme: Theme = "dark";
     private hc: HighContrastResolved = applyHighContrast(null);
+    // ─── Nexus Codex Theme (#819) ──────────────────────────────
+    // Resolved ONCE per update() and routed from here through BOTH renderers
+    // (horizontal + vertical) and every colour helper — never resolved twice.
+    // `inkOverride` is true only for a forced mode: the mode then owns the
+    // text inks against its own surface, whatever the pane says.
+    private codex: ResolvedCodexTheme = resolveCodexTheme(undefined, {
+        hcActive: false, autoTheme: "dark", autoBgHex: "#ffffff", autoTransparencyPct: 100, behindHex: "#ffffff",
+    });
+    private inkOverride: boolean = false;
     private cornerSignature: CardSignatureHandle | null = null;
     // Resolved theme-source hex — the base surface value labels blend against.
     private themeBaseHex: string = "#ffffff";
@@ -282,8 +292,37 @@ export class Visual implements IVisual {
             const themeSourceHex = this.isHighContrast
                 ? behindHex
                 : compositeOver(outerBgHex, outerBgTransparencyPct, behindHex);
-            this.theme = themeFor(themeSourceHex);
-            this.themeBaseHex = themeSourceHex;
+            const autoTheme: Theme = themeFor(themeSourceHex);
+
+            // ─── Nexus Codex Theme (#819): a mode switch ABOVE the pick ───
+            // Auto returns exactly the values derived above — the shipped
+            // render, byte for byte. Dark/Light/Neon paint the Codex surface
+            // (surfaceTokens(theme).card) at the CARD's own Surface
+            // Transparency instead of the user's Background colour, and force
+            // the token set. High contrast already collapsed to Auto inside
+            // the resolver, so no HC branch is added here. Resolved ONCE;
+            // both renderers read `this.codex`.
+            this.codex = resolveCodexTheme(this.formattingSettings.codexTheme, {
+                hcActive: this.isHighContrast,
+                autoTheme,
+                autoBgHex: outerBgHex,
+                autoTransparencyPct: outerBgTransparencyPct,
+                behindHex,
+            });
+            this.theme = this.codex.theme;
+            // Judge every ink against the surface a viewer actually sees. In
+            // Auto that is the composited outer background exactly as before
+            // (and the bare page under HC); in a forced mode it is the Codex
+            // surface composited at the card's transparency.
+            this.themeBaseHex = this.codex.mode === "auto" ? themeSourceHex : this.codex.surfaceHex;
+            // A forced mode OWNS the text inks (title, category labels, value
+            // labels, axis text and titles): a pane ink chosen for a white
+            // card is not a choice about the Codex dark surface. The bar,
+            // target, zone, gridline and fx colours stay the user's.
+            this.inkOverride = this.codex.mode !== "auto";
+            if (this.inkOverride) {
+                this.container.style.backgroundColor = toRgba(this.codex.bgHex, this.codex.transparencyPct);
+            }
             this.hc = applyHighContrast(this.colorPalette, {
                 fallbackColor: this.formattingSettings.bulletSettings.barColor.value.value,
             });
@@ -296,13 +335,18 @@ export class Visual implements IVisual {
                 this.cornerSignature?.elements.forEach((el) => { el.style.display = "none"; });
             } else {
                 const sigVariant = sig.style.value.value as CardSignatureVariant;
+                // Neon: the signature is an ACCENT, so it takes the flare
+                // colour under scope "flare" and its own hue under "all",
+                // and its glow budget becomes the card's Glow Strength.
+                // Outside Neon neonColorFor() is the identity function and
+                // the 55/0 budget is the frozen one.
                 const bracketColor = this.hc.active
                     ? this.hc.color
-                    : (sig.autoColor.value ? accentToken(this.theme) : sig.color.value.value);
+                    : neonColorFor(sig.autoColor.value ? accentToken(this.theme) : sig.color.value.value, this.codex);
                 this.cornerSignature?.update(bracketColor, {
                     variant: sigVariant,
                     mirror: sig.mirrorCorners.value,
-                    glowMix: this.hc.active || this.theme === "light" ? 0 : 55,
+                    glowMix: this.hc.active ? 0 : this.codex.neon ? this.codex.glow : (this.theme === "light" ? 0 : 55),
                     muted: false,
                     highContrast: this.hc.active,
                     cardRadius: clamp(sig.cornerRadius.value, 0, 24),
@@ -573,6 +617,9 @@ export class Visual implements IVisual {
             const tAlign = textAlignFor(String(titleFmt.titleAlign?.value || "left"));
             const tx = tAlign === "center" ? viewportWidth / 2 : tAlign === "right" ? viewportWidth - 8 : 8;
             const tAnchor = tAlign === "center" ? "middle" : tAlign === "right" ? "end" : "start";
+            // Headline ink resolved once so the Neon flare can be struck in
+            // the SAME colour the title is actually painted (#819).
+            const titleInk = this.textColorFor(titleFmt.titleColor.value.value, TITLE_COLOR_DEFAULT);
             svg.append("text")
                 .attr("x", tx)
                 .attr("y", titleFontSize + 4)
@@ -583,7 +630,8 @@ export class Visual implements IVisual {
                 .style("font-weight", this.weightFor(titleFmt.titleBold.value, "400"))
                 .style("font-style", titleFmt.titleItalic.value ? "italic" : "normal")
                 .style("text-decoration", titleFmt.titleUnderline.value ? "underline" : "none")
-                .style("fill", this.textColorFor(titleFmt.titleColor.value.value, TITLE_COLOR_DEFAULT))
+                .style("fill", titleInk)
+                .style("filter", this.headlineGlow(titleInk))
                 .text(String(titleFmt.titleText.value));
         }
 
@@ -1045,6 +1093,9 @@ export class Visual implements IVisual {
             const tAlign = textAlignFor(String(titleFmt.titleAlign?.value || "left"));
             const tx = tAlign === "center" ? viewportWidth / 2 : tAlign === "right" ? viewportWidth - 8 : 8;
             const tAnchor = tAlign === "center" ? "middle" : tAlign === "right" ? "end" : "start";
+            // Headline ink resolved once so the Neon flare can be struck in
+            // the SAME colour the title is actually painted (#819).
+            const titleInk = this.textColorFor(titleFmt.titleColor.value.value, TITLE_COLOR_DEFAULT);
             svg.append("text")
                 .attr("x", tx)
                 .attr("y", titleFontSize + 4)
@@ -1055,7 +1106,8 @@ export class Visual implements IVisual {
                 .style("font-weight", this.weightFor(titleFmt.titleBold.value, "400"))
                 .style("font-style", titleFmt.titleItalic.value ? "italic" : "normal")
                 .style("text-decoration", titleFmt.titleUnderline.value ? "underline" : "none")
-                .style("fill", this.textColorFor(titleFmt.titleColor.value.value, TITLE_COLOR_DEFAULT))
+                .style("fill", titleInk)
+                .style("filter", this.headlineGlow(titleInk))
                 .text(String(titleFmt.titleText.value));
         }
 
@@ -1474,7 +1526,12 @@ export class Visual implements IVisual {
         } else if (hcEmpty) {
             this.cornerSignature?.update(this.colorPalette.foreground.value, { muted: false, glowMix: 0, highContrast: true });
         } else {
-            this.cornerSignature?.update("#8f8ab8", { muted: true });
+            // Neon reaches the landing state too: the muted signature takes
+            // the flare colour and the card's glow budget. Outside Neon
+            // neonColorFor() is the identity and no glowMix is passed, so the
+            // inherited budget (and therefore the Auto render) is untouched.
+            this.cornerSignature?.update(neonColorFor("#8f8ab8", this.codex),
+                this.codex.neon ? { muted: true, glowMix: this.codex.glow } : { muted: true });
         }
         while (this.svgContainer.firstChild) {
             this.svgContainer.removeChild(this.svgContainer.firstChild);
@@ -1552,7 +1609,11 @@ export class Visual implements IVisual {
      *  theme text token) > shipped light default. */
     private textColorFor(setValue: string, shippedDefault: string): string {
         if (this.isHighContrast) return this.colorPalette.foreground.value;
-        if (setValue !== shippedDefault) return setValue;
+        // Nexus Codex Theme (#819): "adapt only when untouched" becomes
+        // "adapt when FORCED or untouched". A forced mode owns its own
+        // surface, so a pane ink picked against the old one is not a choice
+        // about this one. Auto (inkOverride false) keeps every pane ink.
+        if (!this.inkOverride && setValue !== shippedDefault) return setValue;
         // Untouched default: take whichever of the shipped (light-surface) ink
         // and the dark-theme token actually has more WCAG contrast on the
         // COMPOSITED surface, instead of trusting a 0.55 luminance bucket.
@@ -1606,7 +1667,10 @@ export class Visual implements IVisual {
         const instanceObjects = this.categoricalCategories?.objects?.[row.originalIndex];
         const fxResolved = this.valueColorHelper?.getColorForMeasure(instanceObjects, "valueColor") ?? set;
         if (fxResolved !== set) return fxResolved;
-        if (set !== VALUE_COLOR_DEFAULT) return set;
+        // A forced Codex mode owns this ink (#819) — but an fx RULE above is
+        // data, not chrome, so it still outranks the override (the pilot's
+        // `data.textColour || adaptiveValue` ladder).
+        if (!this.inkOverride && set !== VALUE_COLOR_DEFAULT) return set;
         return this.adaptiveInk(this.themeBaseHex);
     }
 
@@ -1685,12 +1749,35 @@ export class Visual implements IVisual {
         return `url(#${id})`;
     }
 
-    /** Glow filter for the measure/tick — dark theme only, never under HC
-     *  (§8 drops all glow). Empty string = no filter applied. */
+    /** Glow filter for the PRIMARY data marks — measure bar, quantised LED
+     *  blocks, target tick. Dark theme only, never under HC (§8 drops all
+     *  glow). Empty string = no filter applied.
+     *
+     *  Nexus Codex Theme (#819): under Neon the budget becomes the card's
+     *  Glow Strength and the flare takes the shared double-halo form, in the
+     *  flare colour (scope "flare") or the mark's own hue (scope "all"). The
+     *  mark's FILL is never recoloured — only what it radiates. Auto, Dark
+     *  and Light keep the frozen 55%-at-`radius` single shadow. */
     private glowFor(base: string, radius: number): string {
-        return this.hc.active || this.theme === "light"
+        if (this.hc.active) return "";
+        if (this.codex.neon) {
+            const flare = neonFilter(neonColorFor(base, this.codex), this.codex.glow);
+            return flare === "none" ? "" : flare;
+        }
+        return this.theme === "light"
             ? ""
             : `drop-shadow(0 0 ${radius}px color-mix(in srgb, ${base} 55%, transparent))`;
+    }
+
+    /** Neon flare on the HEADLINE — the chart title, the one text surface in
+     *  this visual big enough to carry a glow. Category labels, value labels
+     *  and axis text stay flat (the contract: never glow body text smaller
+     *  than the headline), and HC never glows. SVG <text>, so this is a
+     *  `filter`, not a text-shadow. "" = no filter applied. */
+    private headlineGlow(inkHex: string): string {
+        if (this.hc.active || !this.codex.neon) return "";
+        const flare = neonFilter(neonColorFor(inkHex, this.codex), this.codex.glow);
+        return flare === "none" ? "" : flare;
     }
 
     /** Target tick colour — the suite-wide violet target token (§2, never
@@ -1825,6 +1912,7 @@ export class Visual implements IVisual {
     }
 
     public getFormattingModel(): powerbi.visuals.FormattingModel {
+        this.formattingSettings.codexTheme.reveal();
         return this.formattingSettingsService.buildFormattingModel(this.formattingSettings);
     }
 }
