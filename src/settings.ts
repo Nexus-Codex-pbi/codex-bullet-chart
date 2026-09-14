@@ -11,6 +11,11 @@ import FormattingSettingsModel = formattingSettings.Model;
 import { BackgroundSettings } from "./shared/backgroundSettings";
 import { CodexThemeSettings } from "./shared/codexThemeSettings";
 import { BorderSettings } from "./shared/borderSettings";
+// Corner Accents card: the SHARED class. A local copy of this class lived here
+// and shadowed it, so every shared fix (incl. the fx instanceKind on Custom
+// Colour, 7626f59) compiled into a class the visual never instantiated —
+// Bullet Chart was the only one of 15 that did this. Neil 2026-09-14.
+import { CardSignatureSettings } from "./shared/cardSignatureSettings";
 import { TitleSettings } from "./shared/titleSettings";
 import { alignSelfFor, textAlignFor } from "./shared/textFormatting";
 
@@ -456,68 +461,6 @@ class AxisCardSettings extends FormattingSettingsCard {
         this.gridlineWidth,
         this.showAxisTitles,
         this.xAxisTitle
-    ];
-}
-
-class CardSignatureSettings extends FormattingSettingsCard {
-    // Corner-accent chrome (the v2 board's card signature). `show` is the
-    // card's top-level toggle; style maps 1:1 to the shared
-    // CardSignatureVariant; colour is auto (theme accent) unless the user
-    // flips autoColor off. Under high contrast the system colour always
-    // wins regardless (the ONE shared HC rule).
-    show = new formattingSettings.ToggleSwitch({
-        name: "show",
-        displayName: "Show",
-        value: true
-    });
-
-    style = new formattingSettings.ItemDropdown({
-        name: "style",
-        displayName: "Style",
-        items: [
-            { displayName: "Corner Brackets", value: "cornerBracket" },
-            { displayName: "Accent Bar", value: "flatBar" },
-            { displayName: "Glass Tube", value: "glassTube" }
-        ],
-        value: { displayName: "Corner Brackets", value: "cornerBracket" }
-    });
-
-    autoColor = new formattingSettings.ToggleSwitch({
-        name: "autoColor",
-        displayName: "Auto Color",
-        description: "Tint by the theme accent; turn off to pick a custom color",
-        value: true
-    });
-
-    color = new formattingSettings.ColorPicker({
-        name: "color",
-        displayName: "Custom Color",
-        value: { value: "#8f8ab8" }
-    });
-
-    mirrorCorners = new formattingSettings.ToggleSwitch({
-        name: "mirrorCorners",
-        displayName: "Both Corners",
-        description: "Mirror the accent to the opposite corner (off = top-left only)",
-        value: true
-    });
-
-    cornerRadius = new formattingSettings.NumUpDown({
-        name: "cornerRadius",
-        displayName: "Corner Radius",
-        description: "Curve of the corner (px)",
-        value: 10
-    });
-
-    name: string = "cardSignature";
-    displayName: string = "Corner Accents";
-    topLevelSlice = this.show;
-    slices: Array<FormattingSettingsSlice> = [
-        this.style,
-        this.mirrorCorners,
-        this.autoColor,
-        this.color,
-        this.cornerRadius
     ];
 }
 

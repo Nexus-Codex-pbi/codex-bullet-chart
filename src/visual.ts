@@ -599,10 +599,21 @@ export class Visual implements IVisual {
         }) + 16 : 0;
         // Preserve readable text and scale geometry on a scrollable canvas.
         const minChartWidth = Math.max(40, showAxis ? (tickWidth + 8) * tickCount : 0);
-        const viewportWidth = Math.max(hostWidth, labelWidth + valueWidth + minChartWidth + 8, titleWidth);
-        const chartWidth = viewportWidth - labelWidth - valueWidth - 8;
         const legacyTitleHeight = axis.showAxisTitles.value && axis.xAxisTitle.value ? axisFontSize + 10 : 0;
         const totalHeight = rows.length * rowHeight + axisAreaHeight + titleH + legacyTitleHeight + 4;
+        // Scrollbars, in the only order that terminates (Neil 2026-09-14).
+        // `overflow: auto` on BOTH axes with the svg sized to hostWidth is a
+        // permanent horizontal bar: the vertical bar consumes ~15px of the
+        // container's width, so an svg at exactly hostWidth then overflows by
+        // the bar's own width and earns a horizontal bar it never needed.
+        // Decide vertical FIRST, then measure the width actually left
+        // (clientWidth excludes any bar), and only scroll horizontally when the
+        // content genuinely cannot fit — 1180.2.2 wants the bar exactly then.
+        const availWidth = this.measureAvailableWidth(options, totalHeight);
+        const needWidth = Math.max(labelWidth + valueWidth + minChartWidth + 8, titleWidth);
+        const viewportWidth = Math.max(availWidth, needWidth);
+        this.svgContainer.style.overflowX = needWidth > availWidth ? "auto" : "hidden";
+        const chartWidth = viewportWidth - labelWidth - valueWidth - 8;
 
         // Centre the visual horizontally
         const usedWidth = labelWidth + chartWidth + valueWidth + 8;
@@ -639,8 +650,6 @@ export class Visual implements IVisual {
                 .style("filter", this.headlineGlow(titleInk))
                 .text(String(titleFmt.titleText.value));
         }
-
-        this.svgContainer.style.overflow = "auto";
 
         // ─── Domain reconciliation with the common axis (NEXUS cycle-03 §2) ──
         // The axis below draws ONE scale, 0..max(all row maximums). Rows were
@@ -1091,7 +1100,12 @@ export class Visual implements IVisual {
         const defs = svg.append("defs") as unknown as Selection<SVGDefsElement, unknown, null, undefined>;
         const gradCache = new Map<string, string>();
 
-        this.svgContainer.style.overflow = "auto";
+        // Same rule as the horizontal path: vertical decided first, horizontal
+        // only when the content truly exceeds the width that is left.
+        this.svgContainer.style.overflowY = viewportHeight > safeSize(options.viewport.height) ? "auto" : "hidden";
+        const availW = this.svgContainer.clientWidth || hostWidth;
+        const needW = Math.max(totalWidth, titleWidth, footerWidth);
+        this.svgContainer.style.overflowX = needW > availW ? "auto" : "hidden";
 
         if (showTitle) {
             const tAlign = textAlignFor(String(titleFmt.titleAlign?.value || "left"));
@@ -1891,6 +1905,17 @@ export class Visual implements IVisual {
             return glyph + this.formatDisplayValue(row.actual, format);
         });
         return this.measureMaxTextWidth(texts, { family: CODEX_TOKENS.fontFamily, size, weight: "700", style: "normal" });
+    }
+
+    /** Width genuinely available for the svg, decided AFTER the vertical
+     *  scrollbar so its own width is already excluded. `clientWidth` is the
+     *  content box, so it drops the bar; it reads 0 before the container is in
+     *  the document, hence the viewport fallback. */
+    private measureAvailableWidth(options: VisualUpdateOptions, contentHeight: number): number {
+        const hostHeight = safeSize(options.viewport.height);
+        this.svgContainer.style.overflowY = contentHeight > hostHeight ? "auto" : "hidden";
+        const measured = this.svgContainer.clientWidth;
+        return measured > 0 ? measured : safeSize(options.viewport.width);
     }
 
     private measureMaxTextWidth(

@@ -570,6 +570,12 @@
             "numeric": true
           }
         },
+        "neon": {
+          "displayName": "Neon Glow",
+          "type": {
+            "bool": true
+          }
+        },
         "neonColor": {
           "displayName": "Flare Colour",
           "type": {

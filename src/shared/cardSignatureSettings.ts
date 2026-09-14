@@ -54,7 +54,12 @@ export class CardSignatureSettings extends FormattingSettingsCard {
         name: "color",
         displayName: "Custom Color",
         value: { value: "#8f8ab8" },
-        instanceKind: ConstantOrRule
+        // Inline form, not the module-level `ConstantOrRule` const: the const
+        // form compiled away here and the property never reached the emitted
+        // formatting model, so the fx button never rendered on Corner Accents
+        // while the identical declaration in settings.ts/borderSettings.ts did
+        // (measured in the shipped 1.0.0.21 bundle, Neil 2026-09-14).
+        instanceKind: powerbi.VisualEnumerationInstanceKinds.ConstantOrRule
     });
 
     mirrorCorners = new formattingSettings.ToggleSwitch({
