@@ -17,6 +17,7 @@ import { BorderSettings } from "./shared/borderSettings";
 // Bullet Chart was the only one of 15 that did this. Neil 2026-09-14.
 import { CardSignatureSettings } from "./shared/cardSignatureSettings";
 import { TitleSettings } from "./shared/titleSettings";
+import { LicenceSettings } from "./shared/licenceSettings";
 import { alignSelfFor, textAlignFor } from "./shared/textFormatting";
 
 // TitleSettings now lives in _shared/formatting/ (D-13, D-14 — Plan 10
@@ -492,6 +493,8 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
         this.background.transparency.value = 100;
     }
 
+    licence = new LicenceSettings();
+
     cards = [
         this.titleSettings,
         this.bulletSettings,
@@ -502,6 +505,8 @@ export class VisualFormattingSettingsModel extends FormattingSettingsModel {
         this.background,
         this.codexTheme,
         this.cardSignature,
-        this.visualBorder
+        this.visualBorder,
+
+        this.licence
     ];
 }
