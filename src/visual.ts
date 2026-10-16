@@ -87,6 +87,9 @@ function orderedThresholds(poor: number, acceptable: number): [number, number] {
 /** Breathing room between two adjacent vertical category labels (px). */
 const LABEL_COLUMN_GAP = 8;
 
+/** Policy 1180.2.4 Many Rows: cap on strings sent to the DOM text measure. */
+const MEASURE_CANDIDATES = 64;
+
 /** A rect dimension the SVG DOM will accept: never negative, never NaN.
  *  Geometry derived from user-settable numbers (target width, thresholds,
  *  row/column pitch) goes through here before it reaches an attribute. */
@@ -160,6 +163,8 @@ export class Visual implements IVisual {
     private cornerSignature: CardSignatureHandle | null = null;
     // Resolved theme-source hex — the base surface value labels blend against.
     private themeBaseHex: string = "#ffffff";
+    private pendingValueBackings: SVGTextElement[] = [];
+    private textCanvas: CanvasRenderingContext2D | null | undefined;
     private lastDataSignature: string | null = null;
     private shouldSettle: boolean = false;
 
@@ -840,7 +845,7 @@ export class Visual implements IVisual {
                 if (row.target !== null) {
                     const tX = xScale(row.target);
                     const tHalf = targetThickness / 2 + 4;
-                    const estW = this.measureValueWidth([row], valueFontSize);
+                    const estW = this.measureValueWidthFast(row, valueFontSize);
                     if (tX + tHalf > valueLabelX && tX - tHalf < valueLabelX + estW) {
                         valueLabelX = tX + tHalf + 2;
                     }
@@ -884,6 +889,7 @@ export class Visual implements IVisual {
             const selId = this.rowSelectionIds[idx];
             this.bindRowInteractions(g.node(), hitNode, selId, tooltipItems);
         });
+        this.flushValueBackings();
 
         // Axis ticks below the chart + gridlines
         if (showAxis && rows.length > 0) {
@@ -1345,6 +1351,7 @@ export class Visual implements IVisual {
             const selIdV = this.rowSelectionIds[idx];
             this.bindRowInteractions(g.node(), hitNodeV, selIdV, tooltipItemsV);
         });
+        this.flushValueBackings();
 
         // Axis ticks on the left side + gridlines
         if (showAxis && rows.length > 0) {
@@ -1652,19 +1659,34 @@ export class Visual implements IVisual {
     }
 
     private backValueLabel(label: SVGTextElement | null): void {
-        if (!label) return;
-        // A value can cross a zone boundary or extend beyond the track. Give
-        // its complete text box one known surface rather than guessing a zone.
-        const box = label.getBBox();
-        const backing = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-        backing.setAttribute("class", "bullet-value-surface");
-        backing.setAttribute("x", String(box.x - 2));
-        backing.setAttribute("y", String(box.y - 1));
-        backing.setAttribute("width", String(box.width + 4));
-        backing.setAttribute("height", String(box.height + 2));
-        backing.setAttribute("fill", this.themeBaseHex);
-        backing.style.pointerEvents = "none";
-        label.parentNode?.insertBefore(backing, label);
+        if (label) this.pendingValueBackings.push(label);
+    }
+
+    /**
+     *  A value can cross a zone boundary or extend beyond the track. Give its
+     *  complete text box one known surface rather than guessing a zone.
+     *
+     *  Policy 1180.2.4 (Many Rows): every getBBox() after a DOM insert forces a
+     *  layout of the whole growing svg — per row, that is quadratic and the
+     *  reviewer's 30,000-row table froze the visual (v1.0.0.24). Read ALL boxes
+     *  first (one layout), then insert ALL backings.
+     */
+    private flushValueBackings(): void {
+        const labels = this.pendingValueBackings;
+        this.pendingValueBackings = [];
+        const boxes = labels.map(label => label.getBBox());
+        labels.forEach((label, i) => {
+            const box = boxes[i];
+            const backing = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            backing.setAttribute("class", "bullet-value-surface");
+            backing.setAttribute("x", String(box.x - 2));
+            backing.setAttribute("y", String(box.y - 1));
+            backing.setAttribute("width", String(box.width + 4));
+            backing.setAttribute("height", String(box.height + 2));
+            backing.setAttribute("fill", this.themeBaseHex);
+            backing.style.pointerEvents = "none";
+            label.parentNode?.insertBefore(backing, label);
+        });
     }
 
     /** User-adjustable zone visibility; shipped default = the board's 14%. */
@@ -1898,13 +1920,30 @@ export class Visual implements IVisual {
      *  markup string, so the certification surface is unchanged; the probe
      *  is removed before anything else is drawn. Falls back to the old
      *  estimate if getComputedTextLength is unavailable (jsdom-style hosts). */
-    private measureValueWidth(rows: BulletRow[], size: number): number {
+    private valueText(row: BulletRow): string {
         const format = this.formattingSettings.bulletSettings.valueFormat.value.value as string;
-        const texts = rows.map(row => {
-            const glyph = this.hc.active && row.target !== null ? statusGlyph(band(row.actual, row.target)) + " " : "";
-            return glyph + this.formatDisplayValue(row.actual, format);
-        });
-        return this.measureMaxTextWidth(texts, { family: CODEX_TOKENS.fontFamily, size, weight: "700", style: "normal" });
+        const glyph = this.hc.active && row.target !== null ? statusGlyph(band(row.actual, row.target)) + " " : "";
+        return glyph + this.formatDisplayValue(row.actual, format);
+    }
+
+    private measureValueWidth(rows: BulletRow[], size: number): number {
+        return this.measureMaxTextWidth(rows.map(row => this.valueText(row)),
+            { family: CODEX_TOKENS.fontFamily, size, weight: "700", style: "normal" });
+    }
+
+    /** Per-row value width for the collision nudge. Called inside the row loop,
+     *  so it must not touch the DOM (1180.2.4 Many Rows): canvas measureText
+     *  needs no layout. Falls back to the 0.62em/char tabular estimate. */
+    private measureValueWidthFast(row: BulletRow, size: number): number {
+        const text = this.valueText(row);
+        if (this.textCanvas === undefined) {
+            this.textCanvas = document.createElement("canvas").getContext("2d");
+        }
+        const ctx = this.textCanvas;
+        if (!ctx) return text.length * size * 0.62;
+        ctx.font = `normal 700 ${size}px ${CODEX_TOKENS.fontFamily}`;
+        const width = ctx.measureText(text).width;
+        return isFinite(width) && width > 0 ? width : text.length * size * 0.62;
     }
 
     /** Width genuinely available for the svg, decided AFTER the vertical
@@ -1922,7 +1961,14 @@ export class Visual implements IVisual {
         texts: string[],
         font: { family: string; size: number; weight: string; style: string }
     ): number {
-        const estimate = () => Math.max(0, ...texts.map(t => t.length * font.size * 0.65));
+        // 1180.2.4 Many Rows: each getComputedTextLength() is a forced layout,
+        // and the reviewer sends 30,000 rows. Measure only the longest unique
+        // strings — the widest text is among them for any real font.
+        texts = Array.from(new Set(texts));
+        if (texts.length > MEASURE_CANDIDATES) {
+            texts = texts.sort((a, b) => b.length - a.length).slice(0, MEASURE_CANDIDATES);
+        }
+        const estimate = () => texts.reduce((w, t) => Math.max(w, t.length * font.size * 0.65), 0);
         const probeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         probeSvg.setAttribute("width", "0");
         probeSvg.setAttribute("height", "0");

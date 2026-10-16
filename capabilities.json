@@ -720,7 +720,7 @@
           },
           "dataReductionAlgorithm": {
             "top": {
-              "count": 30000
+              "count": 1000
             }
           }
         },
